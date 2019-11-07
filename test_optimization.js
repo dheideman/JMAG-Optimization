@@ -22,11 +22,31 @@ paramkeys.g_2   = "g_2@Variables";
 
 // Define some motor characteristics
 var motor = {};
-motor.ptarget = 3000000; // target power, W
+motor.power = 3000000; // target power, W
 motor.speed = 5000; // RPM
 motor.Vdc = 2000; // pole-to-ground DC voltage
+motor.Vac = motor.Vdc/Math.sqrt(2); // AC effective voltage
+motor.Vph = motor.Vac/Math.sqrt(3); // phase AC effective voltage
+motor.Iph = motor.power/motor.Vac/Math.sqrt(3); // phase AC effective current
 motor.p = 2; // magnetic pole-pair count
-motor.m = 3; // electric phases
+motor.m = 3; // electric phases (to be removed/hardcoded)
+motor.lact = paramkeys.L_act;
+motor.Iac = motor.ptarget/motor.Vac;
+
+
+motor.aw = {};
+motor.aw.kload = 0.6; // armature winding current loading
+motor.aw.kpack = 0.5; // armature winding packing factor
+motor.aw.wirename = "CM-36"; // serial number of wire (MgB2)
+motor.aw.temp     = "20";    // temperature of wire [K]
+
+motor.fc = {};
+motor.fc.kload = 0.6; // field coil current loading
+motor.fc.kpack = 0.3; // field coil packing factor
+motor.fc.wirename = "SCS12050"; // serial number of wire (REBCO)
+motor.fc.temp     = "20";       // temperature of wire [K]
+motor.fc.alpha = 30; // field coil inner separation [electrical degrees]
+motor.fc.beta  = 80; // field coil breadth [electrical degrees]
 
 // convert parameter keys to motor radii
 motor.R6 = paramkeys.R_o;
@@ -41,12 +61,6 @@ var tmin = 1;	// mm
 var maxradius = 300; // mm
 var g1min = 50; // mm
 var g2min = 20; // mm
-
-// Define MgB2 wire characteristics
-var mgb2 = {};
-	mgb2.ro = 0.41; // mm
-	mgb2.nfilaments = 36;
-	mgb2.scfill = 0.15; // superconductor fill fraction
 
 // Get the current model
 var currentmodel = app.GetCurrentModel();
@@ -100,60 +114,46 @@ var optimization = currentstudy.GetOptimizationTable();
 	t_fc.SetMax(maxradius/4);
 
 
-// Calculate the number of turns to use
-//nawparallel = Math.ceiling();
+// make individual region objects
+var aw_mgb2   = new MgB2Wire(motor.aw.wirename, motor.aw.temp, "B_aw_max");
+var aw_I_peak = motor.Iph*Math.sqrt(2);
+var armaturewindings = {};
+	armaturewindings.uphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_U", new Shape(motor.R3, motor.R4, "(-180/2/3/"+motor.p+")", "(180/2/3/"+motor.p+")",  motor.lact, "(180/"+motor.p+")")));
+	armaturewindings.vphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_V", new Shape(motor.R3, motor.R4, "(180/2/3/"+motor.p+")",  "(180/2/"+motor.p+")",    motor.lact, "(180/"+motor.p+")")));
+	armaturewindings.wphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_W", new Shape(motor.R3, motor.R4, "(-180/2/"+motor.p+")",   "(-180/2/3/"+motor.p+")", motor.lact, "(180/"+motor.p+")")));
+	armaturewindings.mass = "("+armaturewindings.uphase.mass+"+"+armaturewindings.vphase.mass+"+"+armaturewindings.wphase.mass+")";
 
+var fc_rebco = new REBCOWire();
+var fc_Idc   = 10; // need to do something about this...
+var fieldcoils = new Coil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc, new Region("fc", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"*"+motor.p+")", "("+motor.fc.alpha+"*"+motor.p+")", motor.lact, "(2*"+motor.p+"*("+motor.fc.beta+"-"+motor.fc.alpha+"))")));
 
 // Set up the components
+var backyoke = new SimpleParametricComponent(new Region("by", new Shape(motor.R5, motor.R6, "(-180/2/"+motor.p+")", "(180/2/"+motor.p+")",  motor.lact, "(180/"+motor.p+")"), "50JN1300");
 
-var armaturewindings = new ParametricComponent("aw", "L_active", ["W-","U+","V-"], "Copper");
-var fieldcoils = new ParametricComponent("fc", "L_active", ["Field Coil +", "Field Coil -"], "Copper");
-var backyoke = new ParametricComponent("by", "L_active", ["Back Yoke"], "50JN1300");
+//masscomponents = [armaturewindings, fieldcoils, backyoke];
 
-masscomponents = [armaturewindings, fieldcoils, backyoke];
-
-optimization.GetObjectiveItem("Minimize Mass").SetExpression(generateMassExpression(masscomponents));
+//optimization.GetObjectiveItem("Minimize Mass").SetExpression(generateMassExpression(masscomponents));
 
 
 // Do some stuff with the armature windings
-awmgb2 = new MgB2("36-CM", "20", "B_leak");
-awshape = new Shape(motor.R3, motor.R4, 0, "180/"+motor.p+"/"+motor.m, motor.lact, "180/"+motor.p);
-armaturewindings.coil = new Coil(awmgb2,0.6, 0.3, 10, 6000, awshape, armaturewindings.areakey);
+debug.Print(armaturewindings.mass);
 
 //optimization.GetObjectiveItem("Print").SetExpression(L_aw);
-//(2*(L_active) + 2*((2*pi*((R_o@Variables - t_by@Variables - g_1@Variables+R_o@Variables - t_by@Variables - g_1@Variables-t_aw@Variables)/2)*(180/p)/360)-2*(10)-(2*pi*(30/360)*(R_o@Variables - t_by@Variables - g_1@Variables+R_o@Variables - t_by@Variables - g_1@Variables-t_aw@Variables)/2)) + 2*pi*(10+(2*pi*(30/360)*(R_o@Variables - t_by@Variables - g_1@Variables+R_o@Variables - t_by@Variables - g_1@Variables-t_aw@Variables)/2)/2))*((0.3*A_aw)/(0.5281017250684441*(6000)/(0.5281017250684441*0.6*1000000*0.15*(-15.38*pow(B_leak,3) + 314.8*pow(B_leak,2) - 2164*B_leak + 5105))))*((6000)/(0.5281017250684441*0.6*1000000*0.15*(-15.38*pow(B_leak,3) + 314.8*pow(B_leak,2) - 2164*B_leak + 5105)))
 
 // Run the current study
 //if (!currentstudy.HasResult()) currentstudy.RunOptimization();
 
 
-function generateMassExpression(components) {
-	var mexp = "";
-	
-	// Go through the components and add their mass expressions to the total mass expression
-	for ( var i = 0; i < components.length; i++ ) {
-		mexp += "("+components[i].massexp+")";
-		if (i < components.length - 1) {
-			mexp += "+";      // only add "+" between terms (not after the last term)
-		}
-	}
-	
-	// Return the full string
-	return mexp;
-}
-
-// Parametric Component object constructor
-function ParametricComponent(key, lengthkey, partkeys, materialkey) {
-	this.key = key;
-	this.areakey = "A_"+this.key;
-	this.lengthkey = lengthkey;
+// Parametric Component object constructor (other than coils)
+function SimpleParametricComponent(regions, materialkey) {
+	this.regions = regions;
+	this.materialkey = materialkey;
 
 	// Select all the parts which make up this component
-	this.partkeys = partkeys;
-	this.parts = currentmodel.CreateSelection();
-	this.parts.Detach();	// don't highlight the selection
-	for ( var i = 0; i < this.partkeys.length; i++) {
-		this.parts.SelectPart(this.partkeys[i]);
+	this.selection = currentmodel.CreateSelection();
+	this.selection.Detach();	// don't highlight the selection
+	for ( var i = 0; i < this.regions.length; i++) {
+		this.selection.Add(this.regions[i].selection);
 	}
 
 	// Select the specified material from the material library
@@ -163,19 +163,35 @@ function ParametricComponent(key, lengthkey, partkeys, materialkey) {
 	// Create an expression for the mass of the component
 	//     2*p:      only one pole of the motor is modelled, so this fills in the rest
 	//     /1000000: unit conversion: the area is measured in mm^2, while the density of materials is given in kg/m^3
-	this.massexp = "2*p*"+this.lengthkey+"*"+this.areakey+"/1000000*"+this.material.GetValue("Physical_MassDensity");
+	var mass = 0;
+	for ( var i = 0; i < this.regions.length; i++) {
+		mass += "2*p*"+this.lengthkey+"*"+this.regions[i].area+"/1000000*"+this.material.GetValue("Physical_MassDensity");
+	}
+	this.mass = mass;
+}
 
+// Region object
+function Region(key, shape) {
+	this.key   = key;
+	this.shape = shape;
+	this.area  = "A_"+this.key;
+	
+	// Eventually add in the creation of the region from the shape?
+	this.selection = currentmodel.CreateSelection();
+	this.selection.Detach(); // don't highlight the selection
+	this.selection.SelectPart(this.key);
+	
 	// Create area measurement variable
-	currentstudy.SetMeasurementVariable(this.areakey, "Volume", this.parts);
+//	currentstudy.SetMeasurementVariable(this.area, "Volume", this.selection);
 }
 
 // Position and Size, polar coordinates
-function Shape(ri, ro, a0, a1, l, pitch){
+function Shape(ri, ro, a0, a1, lact, pitch){
 	this.ri     = ri; // inside radius (motor coordinates) [mm]
 	this.ro     = ro; // outside radius (motor coordinates) [mm]
 	this.a0     = a0; // start angle (typically 0 or alpha) [mechanical degrees]
 	this.a1     = a1; // end angle (typically width or beta) [mechanical degrees]
-	this.l      = l;  // axial length (motor coordinates) [mm]
+	this.lact   = lact;  // axial length (motor coordinates) [mm]
 	this.pitch  = pitch; // center-to-center angle of coil [mechanical degrees]
 
 	this.ravg   = "("+this.ro+"+"+this.ri+")/2"; // average radius (motor coordinates) [mm]
@@ -183,41 +199,56 @@ function Shape(ri, ro, a0, a1, l, pitch){
 }
 
 // MgB2 wire object constructor
-function MgB2(id, temp, B) {
+function MgB2Wire(id, temp, B) {
 	switch(id) {
 		case "36-CM":
 			this.ro = 0.41; // wire outer radius [mm]
 			this.rsc = 0.3141592653589793; // sc filament section radius [mm] (not correct)
-			this.rfilament = 0.01011011001; // individual filament radius [mm] (not correct)
+			this.rfilament  = 0.01011011001; // individual filament radius [mm] (not correct)
 			this.nfilaments = 36;
-			this.scfill = 0.15; // superconductor fill fraction
-			this.density = 8960; // density [kg/m^3] (not correct)
+			this.scfill     = 0.15; // superconductor fill fraction
+			this.density    = 8960; // density [kg/m^3] (not correct)
+			this.rbend      = 10;   // minimum bending radius [mm] (not correct)
 			
 			switch(temp) {
 				case "20": // 20 K
-					this.jcexp = "1000000*"+this.scfill+"*(-15.38*pow("+B+",3)+314.8*pow("+B+",2)-2164*"+B+"+5105)"; 
-					break;
+					this.jc = "1000000*"+this.scfill+"*(-15.38*pow("+B+",3)+314.8*pow("+B+",2)-2164*"+B+"+5105)"; 
+				break;
 			}
-			break;
+		break;
 	}
 	
 	this.area = Math.PI*this.ro*this.ro;
 }
 
+// REBCO wire object constructor
+function REBCOWire(id, temp, B) {
+	switch(id) {
+		case "36-CM":
+		break;
+	}
+}
+
 // Coil object constructor
-function Coil(wire, kload, kpack, rb, I, shape, areakey) {
-	this.wire  = wire;  // wire material/characteristics
-	this.kload = kload; // load factor (aka gamma)
-	this.kpack = kpack; // packing factor (aka beta)
-	this.rb    = rb;    // minimum bending radius [mm]
-	this.shape = shape; // shape object
-	this.areakey = areakey;
+function Coil(wire, kload, kpack, Ipeak, region, rbend) {
+	this.wire   = wire;   // wire material/characteristics
+	this.kload  = kload;  // load factor (aka gamma)
+	this.kpack  = kpack;  // packing factor (aka beta)
+	this.Ipeak  = Ipeak;  // peak current to run through the wire
+	this.region = region; // coil region object
+	this.rbend  = (rbend !== undefined) ? rbend : wire.rbend; // if not specified, use the value specified in wire
+	//this.areakey  = areakey; // being moved into "Region" object
 
-	this.nparallelexp = "("+I+")/("+this.wire.area+"*"+this.kload +"*"+this.wire.jcexp+")";
-	this.nturnsexp    = "("+this.kpack+"*"+this.areakey+")/("+this.wire.area+"*"+this.nparallelexp+")";
+	// Parallel strands and number of turns
+	this.Iparallel = "("+this.wire.area+"*"+this.kload +"*"+this.wire.jc+")";
+	this.nparallel = "("+this.Ipeak+")/("+this.Iparallel+")";
+	this.nturns    = "("+this.kpack+"*"+this.region.area+")/("+this.wire.area+"*"+this.nparallel+")";
 
-	// Calculate wire length
-	width  = "2*pi*"+shape.ravg+"*"+shape.dtheta+"/360";
-	lpitch = "2*pi*"+shape.ravg+"*"+shape.pitch+"/360";
-	this.wirelength = "(2*("+shape.l+")+2*(("+lpitch+")-2*("+this.rb+")-("+width+"))+2*pi*("+this.rb+"+("+width+")/2))*("+this.nturnsexp+")*("+this.nparallelexp+")";
+	// Calculate wire length and mass
+	var shape = this.region.shape;
+	var width  = "2*pi*"+shape.ravg+"*"+shape.dtheta+"/360";
+	var lpitch = "2*pi*"+shape.ravg+"*"+shape.pitch+"/360";
+	var coillength  = "(2*("+shape.lact+")+2*(("+lpitch+")-2*("+this.rbend+")-("+width+"))+2*pi*("+this.rbend+"+("+width+")/2))";
+	this.wirelength = "("+coillength+")*("+this.nturns+")*("+this.nparallel+")";
+	this.mass       = "("+coillength+")*("+this.region.area+")";
 }
