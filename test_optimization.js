@@ -32,12 +32,13 @@ motor.p = 2; // magnetic pole-pair count
 motor.m = 3; // electric phases (to be removed/hardcoded)
 motor.lact = paramkeys.L_act;
 motor.Iac = motor.ptarget/motor.Vac;
+motor.sections = 2*motor.p; // number of sections motor is broken into; 1/sections = fraction of motor modelled
 
 
 motor.aw = {};
 motor.aw.kload = 0.6; // armature winding current loading
 motor.aw.kpack = 0.5; // armature winding packing factor
-motor.aw.wirename = "CM-36"; // serial number of wire (MgB2)
+motor.aw.wirename = "36-CM"; // serial number of wire (MgB2)
 motor.aw.temp     = "20";    // temperature of wire [K]
 
 motor.fc = {};
@@ -125,10 +126,10 @@ var armaturewindings = {};
 
 var fc_rebco = new REBCOWire();
 var fc_Idc   = 10; // need to do something about this...
-var fieldcoils = new Coil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc, new Region("fc", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"*"+motor.p+")", "("+motor.fc.alpha+"*"+motor.p+")", motor.lact, "(2*"+motor.p+"*("+motor.fc.beta+"-"+motor.fc.alpha+"))")));
+//var fieldcoils = new Coil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc, new Region("fc", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"*"+motor.p+")", "("+motor.fc.alpha+"*"+motor.p+")", motor.lact, "(2*"+motor.p+"*("+motor.fc.beta+"-"+motor.fc.alpha+"))")));
 
 // Set up the components
-var backyoke = new SimpleParametricComponent(new Region("by", new Shape(motor.R5, motor.R6, "(-180/2/"+motor.p+")", "(180/2/"+motor.p+")",  motor.lact, "(180/"+motor.p+")"), "50JN1300");
+var backyoke = new SimpleParametricComponent(new Region("by", new Shape(motor.R5, motor.R6, "(-180/2/"+motor.p+")", "(180/2/"+motor.p+")",  motor.lact, "(180/"+motor.p+")")), "50JN1300");
 
 //masscomponents = [armaturewindings, fieldcoils, backyoke];
 
@@ -136,6 +137,7 @@ var backyoke = new SimpleParametricComponent(new Region("by", new Shape(motor.R5
 
 
 // Do some stuff with the armature windings
+//debug.Print(armaturewindings.uphase.mass);
 debug.Print(armaturewindings.mass);
 
 //optimization.GetObjectiveItem("Print").SetExpression(L_aw);
@@ -144,30 +146,29 @@ debug.Print(armaturewindings.mass);
 //if (!currentstudy.HasResult()) currentstudy.RunOptimization();
 
 
-// Parametric Component object constructor (other than coils)
+
+// Parametric Components object constructor (other than coils)
 function SimpleParametricComponent(regions, materialkey) {
 	this.regions = regions;
 	this.materialkey = materialkey;
 
-	// Select all the parts which make up this component
-	this.selection = currentmodel.CreateSelection();
-	this.selection.Detach();	// don't highlight the selection
-	for ( var i = 0; i < this.regions.length; i++) {
-		this.selection.Add(this.regions[i].selection);
-	}
-
 	// Select the specified material from the material library
-	this.materialkey = materialkey;
 	this.material = app.GetMaterialLibrary().GetMaterial(this.materialkey);
+	var density = this.material.GetValue("Physical_MassDensity")/1000000000; // material density [kg/mm^3]
 
 	// Create an expression for the mass of the component
-	//     2*p:      only one pole of the motor is modelled, so this fills in the rest
-	//     /1000000: unit conversion: the area is measured in mm^2, while the density of materials is given in kg/m^3
-	var mass = 0;
-	for ( var i = 0; i < this.regions.length; i++) {
-		mass += "2*p*"+this.lengthkey+"*"+this.regions[i].area+"/1000000*"+this.material.GetValue("Physical_MassDensity");
+	var mass = motor.sections+"*"+density+"*(";
+	if (!regions.length) { // if "regions" is not an array
+		mass += "("+this.regions.shape.l+")*("+this.regions.area+")";
+	} else { // "regions" is an array
+		for ( var i = 0; i < this.regions.length; i++) {
+			mass += "("+this.regions[i].shape.l+")*("+this.regions[i].shape.area+")";
+			if (i != this.regions.length-1) {
+				mass += "+"; // add a "+" after each term which isn't the last one
+			}
+		}
 	}
-	this.mass = mass;
+	this.mass = mass + ")";
 }
 
 // Region object
@@ -186,12 +187,12 @@ function Region(key, shape) {
 }
 
 // Position and Size, polar coordinates
-function Shape(ri, ro, a0, a1, lact, pitch){
+function Shape(ri, ro, a0, a1, l, pitch){
 	this.ri     = ri; // inside radius (motor coordinates) [mm]
 	this.ro     = ro; // outside radius (motor coordinates) [mm]
 	this.a0     = a0; // start angle (typically 0 or alpha) [mechanical degrees]
 	this.a1     = a1; // end angle (typically width or beta) [mechanical degrees]
-	this.lact   = lact;  // axial length (motor coordinates) [mm]
+	this.l      = l;  // axial length (motor coordinates) [mm]
 	this.pitch  = pitch; // center-to-center angle of coil [mechanical degrees]
 
 	this.ravg   = "("+this.ro+"+"+this.ri+")/2"; // average radius (motor coordinates) [mm]
@@ -207,48 +208,72 @@ function MgB2Wire(id, temp, B) {
 			this.rfilament  = 0.01011011001; // individual filament radius [mm] (not correct)
 			this.nfilaments = 36;
 			this.scfill     = 0.15; // superconductor fill fraction
-			this.density    = 8960; // density [kg/m^3] (not correct)
+			this.density    = 8960/1000000000; // density [kg/mm^3] (not correct)
 			this.rbend      = 10;   // minimum bending radius [mm] (not correct)
-			
-			switch(temp) {
-				case "20": // 20 K
-					this.jc = "1000000*"+this.scfill+"*(-15.38*pow("+B+",3)+314.8*pow("+B+",2)-2164*"+B+"+5105)"; 
-				break;
-			}
 		break;
 	}
 	
 	this.area = Math.PI*this.ro*this.ro;
+	
+	switch(temp) {
+		case "20": // 20 K
+			this.jc = "1000000*"+this.scfill+"*(-15.38*pow("+B+",3)+314.8*pow("+B+",2)-2164*"+B+"+5105)"; 
+		break;
+	}
 }
 
 // REBCO wire object constructor
 function REBCOWire(id, temp, B) {
 	switch(id) {
-		case "36-CM":
+		case "SCS4050":
+			this.wsc     = 4.0;   // width of superconductor layer [mm]
+			this.tsc     = 0.001; // thickness of superconductor layer [mm]
+			this.wwire   = 4.2;   // width of wire [mm]
+			this.twire   = 0.30;  // thickness of wire [mm]
+			this.density = 8960/1000000000;  // density [kg/mm^3] (not correct)
+			this.rbend   = 5.5;   // minimum bending radius [mm]
+			
+		break;
+		case "SCS12050":
+			this.wsc     = 12.0;  // width of superconductor layer [mm]
+			this.tsc     = 0.001; // thickness of superconductor layer [mm]
+			this.wwire   = 12.2;  // width of wire [mm]
+			this.twire   = 0.30;  // thickness of wire [mm]
+			this.density = 8960/1000000000;  // density [kg/mm^3] (not correct)
+			this.rbend   = 5.5;   // minimum bending radius [mm]
+			
+		break;
+	}
+	
+	this.area   = this.wwire*this.twire;
+	this.areasc = this.wsc*this.tsc;
+	
+	switch(temp) {
+		case "20": // 20 K
+			this.jc = "1000000*"+this.scfill+"*(-15.38*pow("+B+",3)+314.8*pow("+B+",2)-2164*"+B+"+5105)"; // (not correct)
 		break;
 	}
 }
 
 // Coil object constructor
-function Coil(wire, kload, kpack, Ipeak, region, rbend) {
+function Coil(wire, kload, kpack, Imax, region, rbend) {
 	this.wire   = wire;   // wire material/characteristics
 	this.kload  = kload;  // load factor (aka gamma)
 	this.kpack  = kpack;  // packing factor (aka beta)
-	this.Ipeak  = Ipeak;  // peak current to run through the wire
+	this.Imax   = Imax;   // maximum current to run through the wire
 	this.region = region; // coil region object
-	this.rbend  = (rbend !== undefined) ? rbend : wire.rbend; // if not specified, use the value specified in wire
+	this.rbend  = (rbend !== undefined) ? rbend : this.wire.rbend; // if not specified, use the value specified in wire
 	//this.areakey  = areakey; // being moved into "Region" object
 
-	// Parallel strands and number of turns
+	// Parallel wire count and number of turns
 	this.Iparallel = "("+this.wire.area+"*"+this.kload +"*"+this.wire.jc+")";
-	this.nparallel = "("+this.Ipeak+")/("+this.Iparallel+")";
+	this.nparallel = "("+this.Imax+")/("+this.Iparallel+")";
 	this.nturns    = "("+this.kpack+"*"+this.region.area+")/("+this.wire.area+"*"+this.nparallel+")";
 
 	// Calculate wire length and mass
-	var shape = this.region.shape;
-	var width  = "2*pi*"+shape.ravg+"*"+shape.dtheta+"/360";
-	var lpitch = "2*pi*"+shape.ravg+"*"+shape.pitch+"/360";
-	var coillength  = "(2*("+shape.lact+")+2*(("+lpitch+")-2*("+this.rbend+")-("+width+"))+2*pi*("+this.rbend+"+("+width+")/2))";
+	var width  = "2*pi*"+this.region.shape.ravg+"*"+this.region.shape.dtheta+"/360";
+	var lpitch = "2*pi*"+this.region.shape.ravg+"*"+this.region.shape.pitch+"/360";
+	var coillength  = "2*("+this.region.shape.l+")+2*(("+lpitch+")-2*("+this.rbend+")-("+width+"))+2*pi*("+this.rbend+"+("+width+")/2)";
 	this.wirelength = "("+coillength+")*("+this.nturns+")*("+this.nparallel+")";
-	this.mass       = "("+coillength+")*("+this.region.area+")";
+	this.mass       = "("+this.kpack+")*("+coillength+")*("+this.region.area+")*("+this.wire.density+")";
 }
