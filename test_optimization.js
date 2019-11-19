@@ -120,9 +120,9 @@ var optimization = currentstudy.GetOptimizationTable();
 var aw_mgb2   = new MgB2Wire(motor.aw.wirename, motor.aw.temp, "2");
 var aw_I_peak = motor.Iph*Math.sqrt(2);
 var armaturewindings = {};
-	armaturewindings.uphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_U", new Shape(motor.R3, motor.R4, "("+(-180/2/3/motor.p)+")", "("+(180/2/3/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")));
-	armaturewindings.vphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_V", new Shape(motor.R3, motor.R4, "("+(180/2/3/motor.p)+")",  "("+(180/2/motor.p)+")",    motor.lact, "("+(180/motor.p)+")")));
-	armaturewindings.wphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
+	armaturewindings.uphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_U", new Shape(motor.R3, motor.R4, "("+(-180/2/3/motor.p)+")", "("+(180/2/3/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")));
+	armaturewindings.vphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_V", new Shape(motor.R3, motor.R4, "("+(180/2/3/motor.p)+")",  "("+(180/2/motor.p)+")",    motor.lact, "("+(180/motor.p)+")")));
+	armaturewindings.wphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
 	armaturewindings.mass = "("+armaturewindings.uphase.mass+"+"+armaturewindings.vphase.mass+"+"+armaturewindings.wphase.mass+")";
 
 //var fc_rebco = new REBCOWire("SCS12050", "20", "B_aw_max");
@@ -267,8 +267,8 @@ function REBCOWire(id, temp, B) {
 	this.ic     = this.areasc+"*("+this.jc+")"; // critical current of the wire [A]
 }
 
-// Coil object constructor
-function Coil(wire, kload, kpack, Imax, region, rbend) {
+// Armature Winding object constructor
+function ArmatureWinding(wire, kload, kpack, Imax, region, rbend) {
 	this.wire   = wire;   // wire material/characteristics
 	this.kload  = kload;  // load factor (aka gamma)
 	this.kpack  = kpack;  // packing factor (aka beta)
