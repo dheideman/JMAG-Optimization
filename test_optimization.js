@@ -14,11 +14,11 @@ var app = new ActiveXObject("designer.Application");
 var paramkeys = {}
 paramkeys.R_o   = "R_outer";
 paramkeys.L_act = "L_active";
-paramkeys.t_by  = "t_by@Variables";
-paramkeys.t_aw  = "t_aw@Variables";
-paramkeys.t_fc  = "t_fc@Variables";
-paramkeys.g_1   = "g_1@Variables";
-paramkeys.g_2   = "g_2@Variables";
+paramkeys.t_by  = "t_by";
+paramkeys.t_aw  = "t_aw";
+paramkeys.t_fc  = "t_fc";
+paramkeys.g_1   = "g_1";
+paramkeys.g_2   = "g_2";
 
 // Define some motor characteristics
 var motor = {};
@@ -116,24 +116,26 @@ var optimization = currentstudy.GetOptimizationTable();
 
 
 // make individual region objects
-var aw_mgb2   = new MgB2Wire(motor.aw.wirename, motor.aw.temp, "B_aw_max");
+//var aw_mgb2   = new MgB2Wire(motor.aw.wirename, motor.aw.temp, "B_aw_max");
+var aw_mgb2   = new MgB2Wire(motor.aw.wirename, motor.aw.temp, "2");
 var aw_I_peak = motor.Iph*Math.sqrt(2);
 var armaturewindings = {};
-	armaturewindings.uphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_U", new Shape(motor.R3, motor.R4, "(-180/2/3/"+motor.p+")", "(180/2/3/"+motor.p+")",  motor.lact, "(180/"+motor.p+")")));
-	armaturewindings.vphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_V", new Shape(motor.R3, motor.R4, "(180/2/3/"+motor.p+")",  "(180/2/"+motor.p+")",    motor.lact, "(180/"+motor.p+")")));
-	armaturewindings.wphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_W", new Shape(motor.R3, motor.R4, "(-180/2/"+motor.p+")",   "(-180/2/3/"+motor.p+")", motor.lact, "(180/"+motor.p+")")));
+	armaturewindings.uphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_U", new Shape(motor.R3, motor.R4, "("+(-180/2/3/motor.p)+")", "("+(180/2/3/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")));
+	armaturewindings.vphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_V", new Shape(motor.R3, motor.R4, "("+(180/2/3/motor.p)+")",  "("+(180/2/motor.p)+")",    motor.lact, "("+(180/motor.p)+")")));
+	armaturewindings.wphase = new Coil(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
 	armaturewindings.mass = "("+armaturewindings.uphase.mass+"+"+armaturewindings.vphase.mass+"+"+armaturewindings.wphase.mass+")";
 
-var fc_rebco = new REBCOWire("SCS12050", "20", "B_aw_max");
+//var fc_rebco = new REBCOWire("SCS12050", "20", "B_aw_max");
+var fc_rebco = new REBCOWire("SCS12050", "20", "2");
 var fc_regions = [
-		new Region("fc1", new Shape(motor.R1, motor.R2, "("+motor.p+"*"+motor.fc.alpha+")", "("+motor.p+"*"+motor.fc.beta+")",  motor.lact, "("+motor.sections+"*("+motor.fc.beta+"-"+motor.fc.alpha+"))")),
-		new Region("fc2", new Shape(motor.R1, motor.R2, "(-"+motor.p+"*"+motor.fc.beta+")", "(-"+motor.p+"*"+motor.fc.alpha+")",motor.lact, "("+motor.sections+"*("+motor.fc.beta+"-"+motor.fc.alpha+"))"))
+		new Region("fc1", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"/"+motor.p+")", "("+motor.fc.beta+"/"+motor.p+")",  motor.lact, "("+motor.fc.beta+"+"+motor.fc.alpha+")/"+motor.p)),
+		new Region("fc2", new Shape(motor.R1, motor.R2, "(-"+motor.fc.beta+"/"+motor.p+")", "(-"+motor.fc.alpha+"/"+motor.p+")",motor.lact, "("+motor.fc.beta+"+"+motor.fc.alpha+")/"+motor.p))
 	];
-var fc_Idc   = 10; // need to do something about this...
+var fc_Idc   = fc_rebco.ic*motor.fc.kload; // need to do something about this...
 var fieldcoils = new FieldCoil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc, fc_regions);
 
 // Set up the components
-var backyoke = new SimpleParametricComponent(new Region("by", new Shape(motor.R5, motor.R6, "(-180/2/"+motor.p+")", "(180/2/"+motor.p+")",  motor.lact, "(180/"+motor.p+")")), "50JN1300");
+var backyoke = new SimpleParametricComponent(new Region("by", new Shape(motor.R5, motor.R6, "("+(-180/2/motor.p)+")", "("+(180/2/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")), "50JN1300");
 
 //masscomponents = [armaturewindings, fieldcoils, backyoke];
 
@@ -161,7 +163,7 @@ function SimpleParametricComponent(regions, materialkey) {
 	var density = this.material.GetValue("Physical_MassDensity")/1000000000; // material density [kg/mm^3]
 
 	// Create an expression for the mass of the component
-	var mass = motor.sections+"*"+density+"*(";
+	var mass = density+"*(";
 	if (!regions.length) { // if "regions" is not an array
 		mass += "("+this.regions.shape.l+")*("+this.regions.area+")";
 	} else { // "regions" is an array
@@ -287,7 +289,7 @@ function Coil(wire, kload, kpack, Imax, region, rbend) {
 	var lpitch = "2*pi*"+this.region.shape.ravg+"*"+this.region.shape.pitch+"/360";
 	var coillength  = "2*("+this.region.shape.l+")+2*(("+lpitch+")-2*("+this.rbend+")-("+width+"))+2*pi*("+this.rbend+"+("+width+")/2)";
 	this.wirelength = "("+coillength+")*("+this.nturns+")*("+this.nparallel+")";
-	this.mass       = "("+this.kpack+")*("+coillength+")*("+this.region.area+")*("+this.wire.density+")";
+	this.mass       = "("+this.kpack+")*("+coillength+")*("+this.region.area+")*("+this.wire.density+")/2"; // divide by 2 because only 1/2 of the coil is in the modelled segment
 }
 
 
@@ -304,12 +306,12 @@ function FieldCoil(wire, kload, kpack, I, regions, rbend) {
 	// Parallel wire count and number of turns
 	this.Iparallel = "("+this.kload +"*"+this.wire.ic+")";
 	this.nparallel = "("+this.I+")/("+this.Iparallel+")";
-	this.nturns    = "("+this.kpack+"*"+this.region1.area+")/("+this.wire.area+"*"+this.nparallel+")";
+	this.nturns    = "("+this.kpack+"*"+region1.area+")/("+this.wire.area+"*"+this.nparallel+")";
 
 	// Calculate wire length and mass
-	var width  = "2*pi*"+this.region1.shape.ravg+"*"+this.region1.shape.dtheta+"/360";
-	var lpitch = "2*pi*"+this.region1.shape.ravg+"*"+this.region1.shape.pitch+"/360";
-	var coillength  = "2*("+shape.l+")+2*(("+lpitch+")-2*("+this.rbend+")-("+width+"))+2*pi*("+this.rbend+"+("+width+")/2)";
+	var width  = "2*pi*"+region1.shape.ravg+"*"+region1.shape.dtheta+"/360";
+	var lpitch = "2*pi*"+region1.shape.ravg+"*"+region1.shape.pitch+"/360";
+	var coillength  = "2*("+region1.shape.l+")+2*(("+lpitch+")-2*("+this.rbend+")-("+width+"))+2*pi*("+this.rbend+"+("+width+")/2)";
 	this.wirelength = "("+coillength+")*("+this.nturns+")*("+this.nparallel+")";
-	this.mass       = "("+this.kpack+")*("+coillength+")*("+this.region1.area+")*("+this.wire.density+")";
+	this.mass       = "("+this.kpack+")*("+coillength+")*("+region1.area+")*("+this.wire.density+")";
 }
