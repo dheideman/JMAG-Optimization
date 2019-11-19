@@ -127,12 +127,8 @@ var armaturewindings = {};
 
 //var fc_rebco = new REBCOWire("SCS12050", "20", "B_aw_max");
 var fc_rebco = new REBCOWire("SCS12050", "20", "2");
-var fc_regions = [
-		new Region("fc1", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"/"+motor.p+")", "("+motor.fc.beta+"/"+motor.p+")",  motor.lact, "("+motor.fc.beta+"+"+motor.fc.alpha+")/"+motor.p)),
-		new Region("fc2", new Shape(motor.R1, motor.R2, "(-"+motor.fc.beta+"/"+motor.p+")", "(-"+motor.fc.alpha+"/"+motor.p+")",motor.lact, "("+motor.fc.beta+"+"+motor.fc.alpha+")/"+motor.p))
-	];
 var fc_Idc   = fc_rebco.ic*motor.fc.kload; // need to do something about this...
-var fieldcoils = new FieldCoil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc, fc_regions);
+var fieldcoils = new FieldCoil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc, new Region("fc1", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"/"+motor.p+")", "("+motor.fc.beta+"/"+motor.p+")",  motor.lact, "("+motor.fc.beta+"+"+motor.fc.alpha+")/"+motor.p)));
 
 // Set up the components
 var backyoke = new SimpleParametricComponent(new Region("by", new Shape(motor.R5, motor.R6, "("+(-180/2/motor.p)+")", "("+(180/2/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")), "50JN1300");
@@ -296,14 +292,14 @@ function Coil(wire, kload, kpack, Imax, region, rbend) {
 
 
 // Field Coil object constructor
-function FieldCoil(wire, kload, kpack, I, regions, rbend) {
+function FieldCoil(wire, kload, kpack, I, region1, rbend) {
 	this.wire    = wire;    // wire material/characteristics
 	this.kload   = kload;   // load factor (aka gamma)
 	this.kpack   = kpack;   // packing factor (aka beta)
 	this.I       = I;       // maximum current to run through the wire
-	this.regions = regions; // coil region objects
+	this.region1 = region1; // original field coil region object
+	this.region2 = new Region("fc2", new Shape(region1.shape.ri, region1.shape.ro, "-("+region1.shape.a1+")", "-("+region1.shape.a0+")", region1.shape.l, region1.shape.pitch)); // inverted copy region
 	this.rbend   = (rbend !== undefined) ? rbend : this.wire.rbend; // if not specified, use the value specified in wire
-	var region1  = this.regions[1];
 
 	// Parallel wire count and number of turns
 	this.Iparallel = "("+this.kload +"*"+this.wire.ic+")";
@@ -311,9 +307,9 @@ function FieldCoil(wire, kload, kpack, I, regions, rbend) {
 	this.nturns    = "("+this.kpack+"*"+region1.area+")/("+this.wire.area+"*"+this.nparallel+")";
 
 	// Calculate wire length and mass
-	var width  = "2*pi*"+region1.shape.ravg+"*"+region1.shape.dtheta+"/360";
-	var lpitch = "2*pi*"+region1.shape.ravg+"*"+region1.shape.pitch+"/360";
-	var coillength  = "2*("+region1.shape.l+")+2*(("+lpitch+")-2*("+this.rbend+")-("+width+"))+2*pi*("+this.rbend+"+("+width+")/2)";
+	var width  = "2*pi*"+this.region1.shape.ravg+"*"+this.region1.shape.dtheta+"/360";
+	var lpitch = "2*pi*"+this.region1.shape.ravg+"*"+this.region1.shape.pitch+"/360";
+	var coillength  = "2*("+this.region1.shape.l+")+2*(("+lpitch+")-2*("+this.rbend+")-("+width+"))+2*pi*("+this.rbend+"+("+width+")/2)";
 	this.wirelength = "("+coillength+")*("+this.nturns+")*("+this.nparallel+")";
-	this.mass       = "("+this.kpack+")*("+coillength+")*("+region1.area+")*("+this.wire.density+")";
+	this.mass       = "("+this.kpack+")*("+coillength+")*("+this.region1.area+")*("+this.wire.density+")";
 }
