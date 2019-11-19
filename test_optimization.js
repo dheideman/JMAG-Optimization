@@ -137,6 +137,8 @@ var fieldcoils = new FieldCoil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc,
 // Set up the components
 var backyoke = new SimpleParametricComponent(new Region("by", new Shape(motor.R5, motor.R6, "("+(-180/2/motor.p)+")", "("+(180/2/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")), "50JN1300");
 
+var motormass = motor.sections+"*("+armaturewindings.mass+"+"+fieldcoils.mass+"+"+backyoke.mass+")";
+
 //masscomponents = [armaturewindings, fieldcoils, backyoke];
 
 //optimization.GetObjectiveItem("Minimize Mass").SetExpression(generateMassExpression(masscomponents));
@@ -144,7 +146,7 @@ var backyoke = new SimpleParametricComponent(new Region("by", new Shape(motor.R5
 
 // Do some stuff with the armature windings
 //debug.Print(armaturewindings.uphase.mass);
-debug.Print(armaturewindings.mass);
+debug.Print(motormass);
 
 //optimization.GetObjectiveItem("Print").SetExpression(L_aw);
 
