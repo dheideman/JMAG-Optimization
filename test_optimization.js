@@ -116,14 +116,18 @@ var optimization = currentstudy.GetOptimizationTable();
 
 
 // make individual region objects
+var aw_f      = motor.speed*motor.p/60;
 //var aw_mgb2   = new MgB2Wire(motor.aw.wirename, motor.aw.temp, "B_aw_max");
-var aw_mgb2   = new MgB2Wire(motor.aw.wirename, motor.aw.temp, "2");
+var aw_mgb2   = new MgB2Wire(motor.aw.wirename, motor.aw.temp, "2", aw_f);
 var aw_I_peak = motor.Iph*Math.sqrt(2);
+
 var armaturewindings = {};
 	armaturewindings.uphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_U", new Shape(motor.R3, motor.R4, "("+(-180/2/3/motor.p)+")", "("+(180/2/3/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")));
 	armaturewindings.vphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_V", new Shape(motor.R3, motor.R4, "("+(180/2/3/motor.p)+")",  "("+(180/2/motor.p)+")",    motor.lact, "("+(180/motor.p)+")")));
 	armaturewindings.wphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
-	armaturewindings.mass = "("+armaturewindings.uphase.mass+"+"+armaturewindings.vphase.mass+"+"+armaturewindings.wphase.mass+")";
+	armaturewindings.mass   = "("+armaturewindings.uphase.mass+"+"+armaturewindings.vphase.mass+"+"+armaturewindings.wphase.mass+")";
+//	armaturewindings.acloss = "("+armaturewindings.uphase.acloss+"+"+armaturewindings.vphase.acloss+"+"+armaturewindings.wphase.acloss+")";
+	armaturewindings.acloss = motor.m+"*("+armaturewindings.uphase.acloss+")";
 
 //var fc_rebco = new REBCOWire("SCS12050", "20", "B_aw_max");
 var fc_rebco = new REBCOWire("SCS12050", "20", "2");
@@ -142,7 +146,7 @@ var motormass = motor.sections+"*("+armaturewindings.mass+"+"+fieldcoils.mass+"+
 
 // Do some stuff with the armature windings
 //debug.Print(armaturewindings.uphase.mass);
-debug.Print(motormass);
+debug.Print(armaturewindings.acloss);
 
 //optimization.GetObjectiveItem("Print").SetExpression(L_aw);
 
@@ -204,32 +208,55 @@ function Shape(ri, ro, a0, a1, l, pitch){
 }
 
 // MgB2 wire object constructor
-function MgB2Wire(id, temp, B) {
+function MgB2Wire(id, temp, B, f) {
+	var  MU_0 = 0.000001257; // permeability of free space [H/m]
+	this.B    = B;           // maximum magnetic field strength in wires [T]
+	this.f    = f;           // electrical frequency [Hz]
+
 	switch(id) {
 		case "36-CM":
-			this.ro = 0.41; // wire outer radius [mm]
-			this.rsc = 0.3141592653589793; // sc filament section radius [mm] (not correct)
-			this.rfilament  = 0.01011011001; // individual filament radius [mm] (not correct)
-			this.nfilaments = 36;
-			this.scfill     = 0.15; // superconductor fill fraction
+			this.ro = 0.41;             // wire outer radius [mm]
+			this.rsc = this.ro;         // sc filament section radius [mm] (not correct)
+			this.scfill     = 0.15;     // superconductor fill fraction
+			this.nfilaments = 36;       // number of superconductor filaments
+			this.rfilament  = this.ro*Math.sqrt(this.scfill/this.nfilaments); // individual filament radius [mm] (estimiate)
 			this.density    = 8960/1000000000; // density [kg/mm^3] (not correct)
-			this.rbend      = 10;   // minimum bending radius [mm] (not correct)
+			this.rbend      = 10;       // minimum bending radius [mm] (not correct)
+			this.ltwist     = 9;        // twist pitch [mm]
+			this.sigmaet    = 1360000;  // effective transverse conductivity [S/m]
 		break;
 	}
 	
 	switch(temp) {
 		case "20": // 20 K
-			this.jc = "1000000*(-15.38*pow(("+B+"),3)+314.8*pow(("+B+"),2)-2164*("+B+")+5105)"; //
+			this.jc = "1000000*(-15.38*pow(("+this.B+"),3)+314.8*pow(("+this.B+"),2)-2164*("+this.B+")+5105)"; //
 		break;
 	}
 	
 	this.area   = Math.PI*this.ro*this.ro;      // wire total cross-sectional area [mm^2]
 	this.areasc = this.scfill*this.area;        // wire superconductor area [mm^2]
 	this.ic     = this.areasc+"*("+this.jc+")"; // critical current of the wire [A]
+	
+	var w   = 2*Math.PI*this.f;                 // angular electrical frequency [rad/s]
+	var tau = Math.pow(this.ltwist/(2*Math.PI),2)*MU_0*this.sigmaet/2; // effective time constant of coupling currents [s]
+	this.qc = "2*pow("+this.B+",2)*"+(Math.PI*w*w*tau/MU_0/(1+w*w*tau*tau));// *Math.pow(this.rfilament/this.ro,2); // coupling loss per unit volume [W/m^3]
+	
+/*
+	this.qc2 = function(f){
+		// f: electrical frequency [Hz]
+		var w = 2*Math.PI*this.f;               // angular electrical frequency [rad/s]
+		var tau = Math.pow(this.ltwist/(2*Math.PI),2)*MU_0*this.sigmaet/2; // effective time constant of coupling currents [s]
+		return "2*pow("+this.B+",2)*"+(Math.PI*w*w*tau/MU_0/(1+w*w*tau*tau));// *Math.pow(this.rfilament/this.ro,2); // coupling loss per unit volume [W/m^3]
+	}
+*/
 }
 
 // REBCO wire object constructor
-function REBCOWire(id, temp, B) {
+function REBCOWire(id, temp, B, f) {
+	var  MU_0 = 0.000001257; // permeability of free space [H/m]
+	this.B    = B;           // maximum magnetic field strength in wires [T]
+	this.f    = f;           // electrical frequency [Hz]
+
 	switch(id) {
 		case "SCS4050":
 			this.wsc     = 4.0;   // width of superconductor layer [mm]
@@ -247,7 +274,6 @@ function REBCOWire(id, temp, B) {
 			this.twire   = 0.30;  // thickness of wire [mm]
 			this.density = 8960/1000000000;  // density [kg/mm^3] (not correct)
 			this.rbend   = 5.5;   // minimum bending radius [mm]
-			
 		break;
 	}
 	
@@ -275,19 +301,28 @@ function ArmatureWinding(wire, kload, kpack, Imax, region, rbend) {
 	this.Imax   = Imax;   // maximum current to run through the wire
 	this.region = region; // coil region object
 	this.rbend  = (rbend !== undefined) ? rbend : this.wire.rbend; // if not specified, use the value specified in wire
-	//this.areakey  = areakey; // being moved into "Region" object
 
 	// Parallel wire count and number of turns
 	this.Iparallel = "("+this.kload +"*"+this.wire.ic+")";
 	this.nparallel = "("+this.Imax+")/("+this.Iparallel+")";
 	this.nturns    = "("+this.kpack+"*"+this.region.area+")/("+this.wire.area+"*"+this.nparallel+")";
 
-	// Calculate wire length and mass
+	// Calculate wire length
 	var width  = "2*pi*"+this.region.shape.ravg+"*"+this.region.shape.dtheta+"/360";
 	var lpitch = "2*pi*"+this.region.shape.ravg+"*"+this.region.shape.pitch+"/360";
 	var coillength  = "2*("+this.region.shape.l+")+2*(("+lpitch+")-2*("+this.rbend+")-("+width+"))+2*pi*("+this.rbend+"+("+width+")/2)";
 	this.wirelength = "("+coillength+")*("+this.nturns+")*("+this.nparallel+")";
+
+	// Calculate mass
 	this.mass       = "("+this.kpack+")*("+coillength+")*("+this.region.area+")*("+this.wire.density+")/2"; // divide by 2 because only 1/2 of the coil is in the modelled segment
+
+	// Calculate coupling losses
+	var lossc       = "("+this.wirelength+")/2*("+this.wire.area+")*("+this.wire.qc+")"; // divide by 2 because only 1/2 of the coil is in the modelled segment
+
+	// Calculate hysteresis losses
+	var lossh       = 0; // not yet implemented
+
+	this.acloss     = "("+lossc+"+"+lossh+")";
 }
 
 
