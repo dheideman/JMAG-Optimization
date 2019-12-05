@@ -91,27 +91,27 @@ var optimization = currentstudy.GetOptimizationTable();
 	J_aw.SetMax(5105000000);
 
 	// t_by
-	t_by = optimization.GetParametricItemByParameterName("t_by@Variables");
+	t_by = optimization.GetParametricItemByParameterName(paramkeys.t_by);
 	t_by.SetMin(tmin);
 	t_by.SetMax(maxradius/2);
 
 	// g_1
-	g_1 = optimization.GetParametricItemByParameterName("g_1@Variables");
+	g_1 = optimization.GetParametricItemByParameterName(paramkeys.g_1);
 	g_1.SetMin(g1min);
 	g_1.SetMax(maxradius/3);
 
 	// t_aw
-	t_aw = optimization.GetParametricItemByParameterName("t_aw@Variables");
+	t_aw = optimization.GetParametricItemByParameterName(paramkeys.t_aw);
 	t_aw.SetMin(tmin);
 	t_aw.SetMax(maxradius/4);
 
 	// g_2
-	g_2 = optimization.GetParametricItemByParameterName("g_2@Variables");
+	g_2 = optimization.GetParametricItemByParameterName(paramkeys.g_2);
 	g_2.SetMin(g2min);
 	g_2.SetMax(maxradius/4);
 
 	// t_fc
-	t_fc = optimization.GetParametricItemByParameterName("t_fc@Variables");
+	t_fc = optimization.GetParametricItemByParameterName(paramkeys.t_fc);
 	t_fc.SetMin(tmin);
 	t_fc.SetMax(maxradius/4);
 
