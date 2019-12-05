@@ -68,6 +68,7 @@ var currentmodel = app.GetCurrentModel();
 
 // Get the current study
 var currentstudy = app.GetCurrentStudy();
+currentstudy.SetCheckForTopologyChanges(false);
 
 // Get the optimization table for the current study
 var optimization = currentstudy.GetOptimizationTable();
