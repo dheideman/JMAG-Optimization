@@ -117,18 +117,15 @@ var optimization = currentstudy.GetOptimizationTable();
 
 
 // make individual region objects
-var aw_f      = motor.speed*motor.p/60;
-//var aw_mgb2   = new MgB2Wire(motor.aw.wirename, motor.aw.temp, "B_aw_max");
-var aw_mgb2   = new MgB2Wire(motor.aw.wirename, motor.aw.temp, "2", aw_f);
-var aw_I_peak = motor.Iph*Math.sqrt(2);
+var aw_Bmax  = "B_aw_max";
+var aw_f     = motor.speed*motor.p/60;
+var aw_mgb2  = new MgB2Wire(motor.aw.wirename, motor.aw.temp, aw_Bmax, aw_f);
+var aw_Ipeak = motor.Iph*Math.sqrt(2);
 
-var armaturewindings = {};
-	armaturewindings.uphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region(currentstudy, "aw_U", new Shape(motor.R3, motor.R4, "("+(-180/2/3/motor.p)+")", "("+(180/2/3/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")));
-	armaturewindings.vphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region(currentstudy, "aw_V", new Shape(motor.R3, motor.R4, "("+(180/2/3/motor.p)+")",  "("+(180/2/motor.p)+")",    motor.lact, "("+(180/motor.p)+")")));
-	armaturewindings.wphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region(currentstudy, "aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
-	armaturewindings.mass   = "("+armaturewindings.uphase.mass+"+"+armaturewindings.vphase.mass+"+"+armaturewindings.wphase.mass+")";
-//	armaturewindings.acloss = "("+armaturewindings.uphase.acloss+"+"+armaturewindings.vphase.acloss+"+"+armaturewindings.wphase.acloss+")";
-	armaturewindings.acloss = motor.m+"*("+armaturewindings.uphase.acloss+")";
+var aw_uphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_Ipeak, new Region(currentstudy, "aw_U", new Shape(motor.R3, motor.R4, "("+(-180/2/3/motor.p)+")", "("+(180/2/3/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")));
+var aw_vphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_Ipeak, new Region(currentstudy, "aw_V", new Shape(motor.R3, motor.R4, "("+(180/2/3/motor.p)+")",  "("+(180/2/motor.p)+")",    motor.lact, "("+(180/motor.p)+")")));
+var aw_wphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_Ipeak, new Region(currentstudy, "aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
+var armaturewindings = new ArmatureWindings([aw_uphase, aw_vphase, aw_wphase]);
 
 //var fc_rebco = new REBCOWire("SCS12050", "20", "B_aw_max");
 var fc_rebco = new REBCOWire("SCS12050", "20", "2");
@@ -327,6 +324,30 @@ function ArmatureWinding(wire, kload, kpack, Imax, region, rbend) {
 	this.acloss     = "("+lossc+"+"+lossh+")";
 }
 
+// Armature Windings group object constructor
+function ArmatureWindings(aws) {
+	this.aws = aws;
+	this.uphase = aws[0];
+	this.vphase = aws[1];
+	this.wphase = aws[2];
+	
+	this.selection = currentmodel.CreateSelection();
+	this.selection.Detach(); // don't highlight the selection
+	var mass   = "";
+	var acloss = "";
+	for ( var i = 0; i < this.aws.length; i++) {
+		// Add each winding's selection
+		this.selection.Add(this.aws[i].region.selection);
+		mass   += "("+this.aws[i].mass+")";
+		acloss += "("+this.aws[i].acloss+")";
+		if (i != this.aws.length-1) {
+			mass   += "+"; // add a "+" after each term which isn't the last one
+			acloss += "+";
+		}
+	}
+	this.mass   = mass;
+	this.acloss = acloss;
+}
 
 // Field Coil object constructor
 function FieldCoil(wire, kload, kpack, I, region1, rbend) {
