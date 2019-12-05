@@ -123,9 +123,9 @@ var aw_mgb2   = new MgB2Wire(motor.aw.wirename, motor.aw.temp, "2", aw_f);
 var aw_I_peak = motor.Iph*Math.sqrt(2);
 
 var armaturewindings = {};
-	armaturewindings.uphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_U", new Shape(motor.R3, motor.R4, "("+(-180/2/3/motor.p)+")", "("+(180/2/3/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")));
-	armaturewindings.vphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_V", new Shape(motor.R3, motor.R4, "("+(180/2/3/motor.p)+")",  "("+(180/2/motor.p)+")",    motor.lact, "("+(180/motor.p)+")")));
-	armaturewindings.wphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region("aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
+	armaturewindings.uphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region(currentstudy, "aw_U", new Shape(motor.R3, motor.R4, "("+(-180/2/3/motor.p)+")", "("+(180/2/3/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")));
+	armaturewindings.vphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region(currentstudy, "aw_V", new Shape(motor.R3, motor.R4, "("+(180/2/3/motor.p)+")",  "("+(180/2/motor.p)+")",    motor.lact, "("+(180/motor.p)+")")));
+	armaturewindings.wphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_I_peak, new Region(currentstudy, "aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
 	armaturewindings.mass   = "("+armaturewindings.uphase.mass+"+"+armaturewindings.vphase.mass+"+"+armaturewindings.wphase.mass+")";
 //	armaturewindings.acloss = "("+armaturewindings.uphase.acloss+"+"+armaturewindings.vphase.acloss+"+"+armaturewindings.wphase.acloss+")";
 	armaturewindings.acloss = motor.m+"*("+armaturewindings.uphase.acloss+")";
@@ -133,10 +133,10 @@ var armaturewindings = {};
 //var fc_rebco = new REBCOWire("SCS12050", "20", "B_aw_max");
 var fc_rebco = new REBCOWire("SCS12050", "20", "2");
 var fc_Idc   = fc_rebco.ic*motor.fc.kload; // need to do something about this...
-var fieldcoils = new FieldCoil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc, new Region("fc1", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"/"+motor.p+")", "("+motor.fc.beta+"/"+motor.p+")",  motor.lact, "("+motor.fc.beta+"+"+motor.fc.alpha+")/"+motor.p)));
+var fieldcoils = new FieldCoil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc, new Region(currentstudy, "fc1", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"/"+motor.p+")", "("+motor.fc.beta+"/"+motor.p+")",  motor.lact, "("+motor.fc.beta+"+"+motor.fc.alpha+")/"+motor.p)));
 
 // Set up the components
-var backyoke = new SimpleParametricComponent(new Region("by", new Shape(motor.R5, motor.R6, "("+(-180/2/motor.p)+")", "("+(180/2/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")), "50JN1300");
+var backyoke = new SimpleParametricComponent(new Region(currentstudy, "by", new Shape(motor.R5, motor.R6, "("+(-180/2/motor.p)+")", "("+(180/2/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")), "50JN1300");
 
 var motormass = motor.sections+"*("+armaturewindings.mass+"+"+fieldcoils.mass+"+"+backyoke.mass+")";
 
@@ -181,7 +181,8 @@ function SimpleParametricComponent(regions, materialkey) {
 }
 
 // Region object
-function Region(key, shape) {
+function Region(study, key, shape) {
+	this.study = study;
 	this.key   = key;
 	this.shape = shape;
 	this.area  = "A_"+this.key;
@@ -192,7 +193,7 @@ function Region(key, shape) {
 	this.selection.SelectPart(this.key);
 	
 	// Create area measurement variable
-//	currentstudy.SetMeasurementVariable(this.area, "Volume", this.selection);
+	this.study.SetMeasurementVariable(this.area, "Volume", this.selection);
 }
 
 // Position and Size, polar coordinates
@@ -334,7 +335,7 @@ function FieldCoil(wire, kload, kpack, I, region1, rbend) {
 	this.kpack   = kpack;   // packing factor (aka beta)
 	this.I       = I;       // maximum current to run through the wire
 	this.region1 = region1; // original field coil region object
-	this.region2 = new Region("fc2", new Shape(region1.shape.ri, region1.shape.ro, "-("+region1.shape.a1+")", "-("+region1.shape.a0+")", region1.shape.l, region1.shape.pitch)); // inverted copy region
+	this.region2 = new Region(region1.study, "fc2", new Shape(region1.shape.ri, region1.shape.ro, "-("+region1.shape.a1+")", "-("+region1.shape.a0+")", region1.shape.l, region1.shape.pitch)); // inverted copy region
 	this.rbend   = (rbend !== undefined) ? rbend : this.wire.rbend; // if not specified, use the value specified in wire
 
 	// Parallel wire count and number of turns
