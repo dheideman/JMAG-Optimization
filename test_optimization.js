@@ -127,6 +127,43 @@ var aw_vphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_
 var aw_wphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_Ipeak, new Region(currentstudy, "aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
 var armaturewindings = new ArmatureWindings([aw_uphase, aw_vphase, aw_wphase]);
 
+// Check for an existing B_aw_max calculation
+var index=0;
+var foundBawcalc = false;
+while(!foundBawcalc && index<currentstudy.NumCalculationDefinitions()) {
+	if(currentstudy.GetCalculationDefinition(index).GetName() == aw_Bmax) {
+		foundBawcalc = true;
+	} else {
+		index++;
+	}
+}
+
+// Get or create B_aw calculation definition
+var Bawcalc;
+if (foundBawcalc==true) {
+	Bawcalc = currentstudy.GetCalculationDefinition(index);
+} else {
+	Bawcalc = currentstudy.CreateCalculationDefinition(aw_Bmax);
+}
+
+// Fill in the calculation details
+Bawcalc.ClearParts(); // clear parts in case some were left over
+Bawcalc.AddSelected(armaturewindings.selection);
+Bawcalc.SetCalculationType("max");
+Bawcalc.SetResultType("MagneticFluxDensity");
+
+// Create a new B_aw_max response data variable if one does not already exist
+if (foundBawcalc==false || currentstudy.HasParametricData(aw_Bmax)==false) {
+	// Create response data from B_aw calculation
+	var Bawparam = app.CreateResponseDataParameter(aw_Bmax);
+		Bawparam.SetCalculationType("Maximum");
+		Bawparam.SetCaseRangeType(0); // use all steps in all cases
+		Bawparam.SetVariable(aw_Bmax);
+	
+	currentstudy.CreateParametricDataFromCalculation(aw_Bmax, Bawparam);
+}
+
+
 //var fc_rebco = new REBCOWire("SCS12050", "20", "B_aw_max");
 var fc_rebco = new REBCOWire("SCS12050", "20", "2");
 var fc_Idc   = fc_rebco.ic*motor.fc.kload; // need to do something about this...
