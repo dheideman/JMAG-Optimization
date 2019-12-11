@@ -390,18 +390,19 @@ function MgB2Wire(id, temp, B, f) {
 	
 	switch(temp) {
 		case "20": // 20 K
-			this.jc = "1000000*(-15.38*pow(("+this.B+"),3)+314.8*pow(("+this.B+"),2)-2164*("+this.B+")+5105)"; //
+			this.jc = "(-15.38*pow(("+this.B+"),3)+314.8*pow(("+this.B+"),2)-2164*("+this.B+")+5105)"; // [A/mm^2]
+			this.jce = 1780; // Jc at 20 K, 2 T [A/mm^2]
 		break;
 	}
 	
 	this.area   = Math.PI*this.ro*this.ro;      // wire total cross-sectional area [mm^2]
 	this.areasc = this.scfill*this.area;        // wire superconductor area [mm^2]
-	this.ic     = this.areasc+"*("+this.jc+")"; // critical current of the wire [A]
+	this.ic     = this.areasc+"*("+this.jce+")"; // critical current of the wire [A]
 	
 	var w   = 2*Math.PI*this.f;                 // angular electrical frequency [rad/s]
-	var tau = Math.pow(this.ltwist/(2*Math.PI),2)*MU_0*this.sigmaet/2; // effective time constant of coupling currents [s]
-	this.qc = "2*pow("+this.B+",2)*"+(Math.PI*w*w*tau/MU_0/(1+w*w*tau*tau));// *Math.pow(this.rfilament/this.ro,2); // coupling loss per unit volume [W/m^3]
-	
+	var tau = Math.pow(this.ltwist/(2*Math.PI*1000),2)*MU_0*this.sigmaet/2; // effective time constant of coupling currents [s]
+	this.qc = "2*pow("+this.B+",2)*"+(Math.PI*w*w*tau/MU_0/(1+w*w*tau*tau)*Math.pow(this.rsc/this.ro,2)); // coupling loss per unit volume [W/m^3]
+	this.qh = 16/(3*Math.PI)*Math.pow(this.rfilament/this.ro,2)*this.nfilaments*this.rfilament*this.f+"*("+this.B+")*("+this.jc+")*1000";
 /*
 	this.qc2 = function(f){
 		// f: electrical frequency [Hz]
@@ -440,18 +441,18 @@ function REBCOWire(id, temp, B, f) {
 	
 	switch(temp) {
 		case "30": // 30 K
-			this.jc = 63750; //[A/mm^2] Assuming 2 T perpendicular, 33 K, Ic=765 A for SCS12050. From V. Lombardo 2010 "Critical Currents..." paper
-//			this.jc = 42080; //[A/mm^2] Assuming 4 T perpendicular, 33 K, Ic=505 A for SCS12050. From V. Lombardo 2010 "Critical Currents..." paper
+			this.jce = 63750; //[A/mm^2] Assuming 2 T perpendicular, 33 K, Ic=765 A for SCS12050. From V. Lombardo 2010 "Critical Currents..." paper
+//			this.jce = 42080; //[A/mm^2] Assuming 4 T perpendicular, 33 K, Ic=505 A for SCS12050. From V. Lombardo 2010 "Critical Currents..." paper
 		break;
 		case "20": // 20 K
-			this.jc = 91080; //[A/mm^2] Assuming 2 T perpendicular, 22 K, Ic=1093 A for SCS12050. From V. Lombardo 2010 "Critical Currents..." paper
-//			this.jc = 58920; //[A/mm^2] Assuming 4 T perpendicular, 22 K, Ic=707 A for SCS12050.  From V. Lombardo 2010 "Critical Currents..." paper
+			this.jce = 91080; //[A/mm^2] Assuming 2 T perpendicular, 22 K, Ic=1093 A for SCS12050. From V. Lombardo 2010 "Critical Currents..." paper
+//			this.jce = 58920; //[A/mm^2] Assuming 4 T perpendicular, 22 K, Ic=707 A for SCS12050.  From V. Lombardo 2010 "Critical Currents..." paper
 		break;
 	}
 	
 	this.area   = this.wwire*this.twire;        // wire total cross-sectional area [mm^2]
 	this.areasc = this.wsc*this.tsc;            // wire superconductor area [mm^2]
-	this.ic     = this.areasc+"*("+this.jc+")"; // critical current of the wire [A]
+	this.ic     = this.areasc+"*("+this.jce+")"; // critical current of the wire [A]
 }
 
 // Armature Winding object constructor
@@ -478,10 +479,10 @@ function ArmatureWinding(wire, kload, kpack, Imax, region, rbend) {
 	this.mass       = "("+this.kpack+")*("+coillength+")*("+this.region.area+")*("+this.wire.density+")/2"; // divide by 2 because only 1/2 of the coil is in the modelled segment
 
 	// Calculate coupling losses
-	var lossc       = "("+this.wirelength+")/2*("+this.wire.area+")*("+this.wire.qc+")"; // divide by 2 because only 1/2 of the coil is in the modelled segment
+	var lossc       = "("+this.wirelength+")/2*("+this.wire.area+")/(1e+9)*("+this.wire.qc+")"; // divide by 2 because only 1/2 of the coil is in the modelled segment
 
 	// Calculate hysteresis losses
-	var lossh       = 0; // not yet implemented
+	var lossh       = "("+this.wirelength+")/2*("+this.wire.area+")/(1e+9)*("+this.wire.qh+")"; // divide by 2 because only 1/2 of the coil is in the modelled segment
 
 	this.acloss     = "("+lossc+"+"+lossh+")";
 }
