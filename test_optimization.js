@@ -38,16 +38,16 @@ motor.sections = 2*motor.p; // number of sections motor is broken into; 1/sectio
 motor.aw = {};
 motor.aw.kload = 0.6; // armature winding current loading
 motor.aw.kpack = 0.5; // armature winding packing factor
-motor.aw.wirename = "36-CM"; // serial number of wire (MgB2)
+motor.aw.wirename = "KongMgB2"; // serial number of wire (MgB2)
 motor.aw.temp     = "20";    // temperature of wire [K]
 
 motor.fc = {};
 motor.fc.kload = 0.6; // field coil current loading
 motor.fc.kpack = 0.3; // field coil packing factor
-motor.fc.wirename = "SCS12050"; // serial number of wire (REBCO)
-motor.fc.temp     = "20";       // temperature of wire [K]
-motor.fc.alpha = 30; // field coil inner separation [electrical degrees]
-motor.fc.beta  = 80; // field coil breadth [electrical degrees]
+motor.fc.wirename = "KongREBCO"; // serial number of wire (REBCO)
+motor.fc.temp     = "Kong";       // temperature of wire [K]
+motor.fc.alpha = 31.15; // field coil inner separation [electrical degrees]
+motor.fc.beta  = 89; // field coil breadth [electrical degrees]
 
 // convert parameter keys to motor radii
 motor.R6 = paramkeys.R_o;
@@ -386,6 +386,17 @@ function MgB2Wire(id, temp, B, f) {
 			this.ltwist     = 9;        // twist pitch [mm]
 			this.sigmaet    = 1360000;  // effective transverse conductivity [S/m]
 		break;
+		case "KongMgB2":
+			this.ro = 0.255;            // wire outer radius [mm]
+			this.rsc = 0.193;           // sc filament section radius [mm]
+			this.scfill     = 0.15;     // superconductor fill fraction
+			this.nfilaments = 36;       // number of superconductor filaments
+			this.rfilament  = 0.01646;  // individual filament radius [mm]
+			this.density    = 7995/1000000000; // density [kg/mm^3] (not correct)
+			this.rbend      = 60;       // minimum bending radius [mm] (not correct)
+			this.ltwist     = 9;        // twist pitch [mm]
+			this.sigmaet    = 1360000;  // effective transverse conductivity [S/m]
+		break;
 	}
 	
 	switch(temp) {
@@ -437,6 +448,14 @@ function REBCOWire(id, temp, B, f) {
 			this.density = 8960/1000000000;  // density [kg/mm^3] (not correct)
 			this.rbend   = 5.5;   // minimum bending radius [mm]
 		break;
+		case "KongREBCO":
+			this.wsc     = 12.0;  // width of superconductor layer [mm]
+			this.tsc     = 0.001; // thickness of superconductor layer [mm]
+			this.wwire   = 12.2;  // width of wire [mm]
+			this.twire   = 0.30;  // thickness of wire [mm]
+			this.density = 8940/1000000000;  // density [kg/mm^3]
+			this.rbend   = 192.2;   // =0.7101*ro //minimum bending radius [mm]
+		break;
 	}
 	
 	switch(temp) {
@@ -447,6 +466,9 @@ function REBCOWire(id, temp, B, f) {
 		case "20": // 20 K
 			this.jce = 91080; //[A/mm^2] Assuming 2 T perpendicular, 22 K, Ic=1093 A for SCS12050. From V. Lombardo 2010 "Critical Currents..." paper
 //			this.jce = 58920; //[A/mm^2] Assuming 4 T perpendicular, 22 K, Ic=707 A for SCS12050.  From V. Lombardo 2010 "Critical Currents..." paper
+		break;
+		case "Kong": // 4 T, 20 K, Kong Weilu
+			this.jce = 58920; //[A/mm^2] Assuming 4 T perpendicular, 22 K, Ic=707 A for SCS12050.
 		break;
 	}
 	
