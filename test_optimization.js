@@ -68,13 +68,13 @@ var currentmodel = app.GetCurrentModel();
 
 // Get the current study
 var currentstudy = app.GetCurrentStudy();
-currentstudy.SetCheckForTopologyChanges(false);
+//currentstudy.SetCheckForTopologyChanges(false);
 
 // Get the optimization table for the current study
 var optimization = currentstudy.GetOptimizationTable();
 
 // Set some parameter ranges
-
+/*
 	// R_outer
 	R_outer = optimization.GetParametricItemByParameterName(paramkeys.R_o);
 	R_outer.SetMin(maxradius);
@@ -114,7 +114,7 @@ var optimization = currentstudy.GetOptimizationTable();
 	t_fc = optimization.GetParametricItemByParameterName(paramkeys.t_fc);
 	t_fc.SetMin(tmin);
 	t_fc.SetMax(maxradius/4);
-
+*/
 
 // make individual region objects
 var aw_Bmax  = "B_aw_max";
@@ -165,7 +165,7 @@ if (foundBawcalc==false || currentstudy.HasParametricData(aw_Bmax)==false) {
 
 
 //var fc_rebco = new REBCOWire("SCS12050", "20", "B_aw_max");
-var fc_rebco = new REBCOWire("SCS12050", "20", "2");
+var fc_rebco = new REBCOWire(motor.fc.wirename, motor.fc.temp, "2");
 var fc_Idc   = fc_rebco.ic*motor.fc.kload; // need to do something about this...
 var fieldcoils = new FieldCoil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc, new Region(currentstudy, "fc1", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"/"+motor.p+")", "("+motor.fc.beta+"/"+motor.p+")",  motor.lact, "("+motor.fc.beta+"+"+motor.fc.alpha+")/"+motor.p)));
 
@@ -235,7 +235,8 @@ function Region(study, key, shape) {
 	this.area  = "A_"+this.key;
 	
 	// Eventually add in the creation of the region from the shape?
-	this.selection = currentmodel.CreateSelection();
+	this.selection = currentmodel.CreateSelection();                         // need to explicitly pass the model object
+	this.selection.Clear();  // make sure the selection is clear
 	this.selection.Detach(); // don't highlight the selection
 	this.selection.SelectPart(this.key);
 	
