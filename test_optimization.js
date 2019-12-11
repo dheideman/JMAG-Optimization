@@ -127,33 +127,11 @@ var aw_vphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_
 var aw_wphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_Ipeak, new Region(currentstudy, "aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
 var armaturewindings = new ArmatureWindings([aw_uphase, aw_vphase, aw_wphase]);
 
-// Check for an existing B_aw_max calculation
-var index=0;
-var foundBawcalc = false;
-while(!foundBawcalc && index<currentstudy.NumCalculationDefinitions()) {
-	if(currentstudy.GetCalculationDefinition(index).GetName() == aw_Bmax) {
-		foundBawcalc = true;
-	} else {
-		index++;
-	}
-}
-
 // Get or create B_aw calculation definition
-var Bawcalc;
-if (foundBawcalc==true) {
-	Bawcalc = currentstudy.GetCalculationDefinition(index);
-} else {
-	Bawcalc = currentstudy.CreateCalculationDefinition(aw_Bmax);
-}
-
-// Fill in the calculation details
-Bawcalc.ClearParts(); // clear parts in case some were left over
-Bawcalc.AddSelected(armaturewindings.selection);
-Bawcalc.SetCalculationType("max");
-Bawcalc.SetResultType("MagneticFluxDensity");
+var Bawcalc = createCalculationDefinition(currentstudy, aw_Bmax, armaturewindings.selection, "max", "MagneticFluxDensity");
 
 // Create a new B_aw_max response data variable if one does not already exist
-if (foundBawcalc==false || currentstudy.HasParametricData(aw_Bmax)==false) {
+if (currentstudy.HasParametricData(aw_Bmax)==false) {
 	// Create response data from B_aw calculation
 	var Bawparam = app.CreateResponseDataParameter(aw_Bmax);
 		Bawparam.SetCalculationType("Maximum");
@@ -175,33 +153,166 @@ var backyoke = new SimpleParametricComponent(new Region(currentstudy, "by", new 
 
 // Do some stuff with the armature windings
 //debug.Print(armaturewindings.uphase.mass);
-debug.Print(armaturewindings.acloss);
+//debug.Print(armaturewindings.acloss);
 
-// Set up mass objective
-var massobjective = "Mass";
-var motormass = motor.sections+"*("+armaturewindings.mass+"+"+fieldcoils.mass+"+"+backyoke.mass+")";
 
-// Check whether the mass objective exists
-var index=0;
-var foundmassobjective = false;
-while(!foundmassobjective && index<optimization.NumObjectives()) {
-	if(optimization.GetObjectiveItem(index).GetName() == massobjective) {
-		foundmassobjective = true;
-	} else {
-		index++;
-	}
+// Set motor torque measurement name
+var motortorque = "AvgTorque";
+
+// Create a new torque response data variable if one does not already exist
+if (currentstudy.HasParametricData(motortorque)==false) {
+	// Create response data from torque calculation
+	var torqueparam = app.CreateResponseDataParameter(motortorque);
+		torqueparam.SetCalculationType("IntegralAverage");
+		torqueparam.SetCaseRangeType(0); // use all steps in all cases
+		torqueparam.SetVariable(motortorque);
+	
+	currentstudy.CreateParametricDataFromTable("Torque", torqueparam);
 }
-// If the mass objective doesn't exist, create it
-if (foundmassobjective==false) {
-	optimization.AddObjectiveItem(massobjective)
-}
-optimization.GetObjectiveItem(massobjective).SetExpression(motormass);
-optimization.GetObjectiveItem(massobjective).SetType("minimize");
+
+
+/***************************/
+/* Optimization Objectives */
+/***************************/
+
+// Create objective function expressions
+var massobjectiveexp = motor.sections+"*("+armaturewindings.mass+"+"+fieldcoils.mass+"+"+backyoke.mass+")";
+var lossobjectiveexp = motor.sections+"*("+armaturewindings.acloss+")"; // need to add in iron loss
+
+// Set up optimization objectives
+var massobjective = createOptimizationObjective(optimization, "Mass",   massobjectiveexp, "minimize", 1);
+var lossobjective = createOptimizationObjective(optimization, "Losses", lossobjectiveexp, "minimize", 1);
+
+/****************************/
+/* Optimization Constraints */
+/****************************/
+
+// Set up mechanical power constraint
+var powerconstraint = createOptimizationConstraint(optimization, "Mechanical Power", "("+2*Math.PI*motor.speed/60+"*"+motortorque+")", ">=", motor.power);
+
+
 
 // Run the current study
 //if (!currentstudy.HasResult()) currentstudy.RunOptimization();
 
 
+
+
+
+/******************************************************************************/
+
+/*************/
+/* Functions */
+/*************/
+
+// Get or create a calculation definition (CalculationDefinition class) with the given name in the given study
+function createCalculationDefinition(study, name, selection, calctype, resulttype) {
+	// study:       study in which this calculation is to exist
+	// name:        name of the calculation in JMAG-Designer (user-selected)
+	// selection:   objective expression (user-defined)
+	// calctype:    calculation type: e.g. "min", "max",...
+	// resulttype:  what the calculation measures (e.g. "MagneticFluxDensity")
+
+	var calculation = null;   // initialize calculation definition to null
+
+	// Try to locate an existing calculation with the same name
+	for (var i=0; i<study.NumCalculationDefinitions(); i++) {
+		if (study.GetCalculationDefinition(i).GetName() == name) {
+			if (calculation == null) {
+				calculation = study.GetCalculationDefinition(i);
+			} else {
+				study.DeleteCalculationDefinition(i); // remove duplicate objective items
+			}
+		}
+	}
+	// Create a new expression item if one doesn't exist
+	if (calculation == null) {
+		study.CreateCalculationDefinition(name);
+		calculation = study.GetCalculationDefinition(name);
+	}
+
+	// Fill in the calculation details
+	calculation.ClearParts(); // clear parts in case some were left over
+	calculation.AddSelected(selection);
+	calculation.SetCalculationType(calctype);
+	calculation.SetResultType(resulttype);
+
+	return calculation;
+}
+
+
+// Get or create an optimization objective (ExpressionItem class) with the given name in the given optimization table
+function createOptimizationObjective(opt, name, exp, type, weight) {
+	// opt:     optimization table in which this optimization constraint is to exist
+	// name:    name of the constraint in JMAG-Designer (user-selected)
+	// exp:     objective expression (user-defined)
+	// type:    objective function type: "minimize" or "maximize"
+	// weight:  weight of this objective function
+
+	var objectiveitem = null;   // initialize expression item to null
+
+	// Try to locate an existing constraint with the same name
+	for (var i=0; i<opt.NumObjectives(); i++) {
+		if (opt.GetObjectiveItem(i).GetName() == name) {
+			if (objectiveitem == null) {
+				objectiveitem = opt.GetObjectiveItem(i);
+			} else {
+				opt.RemoveObjectiveItem(i); // remove duplicate objective items
+			}
+		}
+	}
+	// Create a new expression item if one doesn't exist
+	if (objectiveitem == null) {
+		opt.AddObjectiveItem(name);
+		objectiveitem = opt.GetObjectiveItem(name);
+	}
+
+	// Set the expression, type, and value of the optimization constraint
+	objectiveitem.SetExpression(exp);
+	objectiveitem.SetType(type);
+	objectiveitem.SetWeight(weight);
+
+	return objectiveitem;
+}
+
+// Get or create an optimization constraint (ExpressionItem class) with the given name in the given optimization table
+function createOptimizationConstraint(opt, name, exp, type, value) {
+	// opt:     optimization table in which this optimization constraint is to exist
+	// name:    name of the constraint in JMAG-Designer (user-selected)
+	// exp:     constraint expression (user-defined)
+	// type:    constraint expression type: ">=", "<=", or "=="
+	// value:   expression value to which to compare
+
+	var expressionitem = null;   // initialize expression item to null
+
+	// Try to locate an existing constraint with the same name
+	for (var i=0; i<opt.NumExpressions(); i++) {
+		if (opt.GetExpressionItem(i).GetName() == name) {
+			if (expressionitem == null) {
+				expressionitem = opt.GetExpressionItem(i);
+			} else {
+				opt.RemoveExpressionItem(i); // remove duplicate expression items
+			}
+		}
+	}
+	// Create a new expression item if one doesn't exist
+	if (expressionitem == null) {
+		opt.AddExpressionItem(name);
+		expressionitem = opt.GetExpressionItem(name);
+	}
+
+	// Set the expression, type, and value of the optimization constraint
+	expressionitem.SetExpression(exp);
+	expressionitem.SetType(type);
+	expressionitem.SetValue(value);
+
+	return expressionitem;
+}
+
+
+/****************/
+/* Constructors */
+/****************/
 
 // Parametric Components object constructor (other than coils)
 function SimpleParametricComponent(regions, materialkey) {
