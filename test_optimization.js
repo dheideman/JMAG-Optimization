@@ -11,39 +11,58 @@ Comment-en:
 // Get JMAG-Designer application
 var app = new ActiveXObject("designer.Application");
 
-var paramkeys = {}
-paramkeys.R_o   = "R_outer";
-paramkeys.L_act = "L_active";
-paramkeys.t_by  = "t_by";
-paramkeys.t_aw  = "t_aw";
-paramkeys.t_fc  = "t_fc";
-paramkeys.g_1   = "g_1";
-paramkeys.g_2   = "g_2";
+var paramkeys = {};
+paramkeys.R_o     = "R_outer";
+paramkeys.R_sense = "R_sense";
+paramkeys.L_act   = "L_active";
+paramkeys.t_by    = "t_by";
+paramkeys.t_aw    = "t_aw";
+paramkeys.t_fc    = "t_fc";
+paramkeys.g_1     = "g_1";  // air gap between field coils and armature windings
+paramkeys.g_2     = "g_2";  // air gap between armature windings and back yoke
+paramkeys.RPM     = "RPM";
+
+// Circuit parameters
+paramkeys.R_load  = "R_load_ac";
 
 // Define some motor characteristics
 var motor = {};
-motor.power = 3000000; // target power, W
-motor.speed = 5000; // RPM
-motor.Vdc = 2000; // pole-to-ground DC voltage
-motor.Vac = motor.Vdc/Math.sqrt(2); // AC effective voltage
-motor.Vph = motor.Vac/Math.sqrt(3); // phase AC effective voltage
-motor.Iph = motor.power/motor.Vac/Math.sqrt(3); // phase AC effective current
+motor.power  = 11190000; // target power, W
+motor.speed  = 5000; // RPM
 motor.p = 2; // magnetic pole-pair count
 motor.m = 3; // electric phases (to be removed/hardcoded)
+motor.Vdc    = 4500; // pole-to-ground DC voltage
+motor.Vline  = Math.sqrt(2)*Math.PI/3*motor.Vdc; // AC line voltage, RMS
+motor.Vphase = motor.Vline/Math.sqrt(3); // AC phase voltage, RMS
+motor.Iphase = motor.power/(3*motor.Vphase); // AC phase current, RMS
+motor.Iline  = motor.Iphase; // AC line current, RMS
+motor.Fac    = paramkeys.RPM+"*"+motor.p/60; // AC frequency (armature windings)
+motor.Rload  = Math.pow(motor.Vline,2)/motor.power;
+
+
 motor.lact = paramkeys.L_act;
-motor.Iac = motor.ptarget/motor.Vac;
+
+//motor.Rsense = 2*R_motor;
+motor.B_leak_limit = 0.00305; // leakage magnetic flux upper limit [T]
+
 motor.sections = 2*motor.p; // number of sections motor is broken into; 1/sections = fraction of motor modelled
+
+// Turbine Stuff
+motor.maxtipspeed    = 500; // m/s
+motor.turbineradius  = 60*1000/(2*Math.PI)+"*"+motor.maxtipspeed+"*"+paramkeys.RPM; // mm
+motor.radiusfraction = 0.5; // motor radius fraction of turbine radius
+motor.radius         = motor.radiusfraction+"*"+motor.turbineradius; // mm
 
 
 motor.aw = {};
 motor.aw.kload = 0.6; // armature winding current loading
-motor.aw.kpack = 0.5; // armature winding packing factor
-motor.aw.wirename = "KongMgB2"; // serial number of wire (MgB2)
+motor.aw.kpack = 0.3; // armature winding packing factor
+motor.aw.wirename = "36-CM"; // serial number of wire (MgB2)
 motor.aw.temp     = "20";    // temperature of wire [K]
 
 motor.fc = {};
 motor.fc.kload = 0.6; // field coil current loading
-motor.fc.kpack = 0.3; // field coil packing factor
+motor.fc.kpack = 0.5; // field coil packing factor
 motor.fc.wirename = "KongREBCO"; // serial number of wire (REBCO)
 motor.fc.temp     = "Kong";       // temperature of wire [K]
 motor.fc.alpha = 31.15; // field coil inner separation [electrical degrees]
@@ -52,16 +71,21 @@ motor.fc.beta  = 89; // field coil breadth [electrical degrees]
 // convert parameter keys to motor radii
 motor.R6 = paramkeys.R_o;
 motor.R5 = motor.R6+"-"+paramkeys.t_by;
-motor.R4 = motor.R5+"-"+paramkeys.g_1;
+motor.R4 = motor.R5+"-"+paramkeys.g_2;
 motor.R3 = motor.R4+"-"+paramkeys.t_aw;
-motor.R2 = motor.R3+"-"+paramkeys.g_2;
+motor.R2 = motor.R3+"-"+paramkeys.g_1;
 motor.R1 = motor.R2+"-"+paramkeys.t_fc;
 
 
 var tmin = 1;	// mm
-var maxradius = 300; // mm
+var maxradius = motor.radius; // mm
 var g1min = 50; // mm
 var g2min = 20; // mm
+
+var lossweight = 1;
+var massweight = 1;
+var statormassmargin = 0.25; // 25% mass margin for stator
+var rotormassmargin = 0.25; // 25% mass margin for rotor
 
 // Get the current model
 var currentmodel = app.GetCurrentModel();
@@ -84,11 +108,6 @@ var optimization = currentstudy.GetOptimizationTable();
 	L_active = optimization.GetParametricItemByParameterName(paramkeys.L_act);
 	L_active.SetMin(10);
 	L_active.SetMax(1000);
-
-	// J_aw
-	J_aw = optimization.GetParametricItemByParameterName("J_aw");
-	J_aw.SetMin(1780000000);
-	J_aw.SetMax(5105000000);
 
 	// t_by
 	t_by = optimization.GetParametricItemByParameterName(paramkeys.t_by);
@@ -118,13 +137,11 @@ var optimization = currentstudy.GetOptimizationTable();
 
 // make individual region objects
 var aw_Bmax  = "B_aw_max";
-var aw_f     = motor.speed*motor.p/60;
-var aw_mgb2  = new MgB2Wire(motor.aw.wirename, motor.aw.temp, aw_Bmax, aw_f);
-var aw_Ipeak = motor.Iph*Math.sqrt(2);
+var aw_mgb2  = new MgB2Wire(motor.aw.wirename, motor.aw.temp, aw_Bmax, motor.Fac);
 
-var aw_uphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_Ipeak, new Region(currentstudy, "aw_U", new Shape(motor.R3, motor.R4, "("+(-180/2/3/motor.p)+")", "("+(180/2/3/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")));
-var aw_vphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_Ipeak, new Region(currentstudy, "aw_V", new Shape(motor.R3, motor.R4, "("+(180/2/3/motor.p)+")",  "("+(180/2/motor.p)+")",    motor.lact, "("+(180/motor.p)+")")));
-var aw_wphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, aw_Ipeak, new Region(currentstudy, "aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
+var aw_uphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, motor.Iphase, new Region(currentstudy, "aw_U", new Shape(motor.R3, motor.R4, "("+(-180/2/3/motor.p)+")", "("+(180/2/3/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")));
+var aw_vphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, motor.Iphase, new Region(currentstudy, "aw_V", new Shape(motor.R3, motor.R4, "("+(180/2/3/motor.p)+")",  "("+(180/2/motor.p)+")",    motor.lact, "("+(180/motor.p)+")")));
+var aw_wphase = new ArmatureWinding(aw_mgb2, motor.aw.kload, motor.aw.kpack, motor.Iphase, new Region(currentstudy, "aw_W", new Shape(motor.R3, motor.R4, "("+(-180/2/motor.p)+")",   "("+(-180/2/3/motor.p)+")", motor.lact, "("+(180/motor.p)+")")));
 var armaturewindings = new ArmatureWindings([aw_uphase, aw_vphase, aw_wphase]);
 
 // Get or create B_aw calculation definition
@@ -141,20 +158,47 @@ if (currentstudy.HasParametricData(aw_Bmax)==false) {
 	currentstudy.CreateParametricDataFromCalculation(aw_Bmax, Bawparam);
 }
 
+//debug.Print(motor.Iphase);
+//currentstudy.SetVariable("N_turns", aw_uphase.nturns);
+currentstudy.GetVariable("N_turns").SetType(1);
+currentstudy.GetVariable("N_turns").SetExpression("("+aw_uphase.nturns+")");
 
 //var fc_rebco = new REBCOWire("SCS12050", "20", "B_aw_max");
 var fc_rebco = new REBCOWire(motor.fc.wirename, motor.fc.temp, "2");
-var fc_Idc   = fc_rebco.ic*motor.fc.kload; // need to do something about this...
-var fieldcoils = new FieldCoil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc, new Region(currentstudy, "fc1", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"/"+motor.p+")", "("+motor.fc.beta+"/"+motor.p+")",  motor.lact, "("+motor.fc.beta+"+"+motor.fc.alpha+")/"+motor.p)));
+//var fc_Idc   = fc_rebco.ic*motor.fc.kload; // need to do something about this...
+//var fieldcoils = new FieldCoil(fc_rebco, motor.fc.kload, motor.fc.kpack, fc_Idc, new Region(currentstudy, "fc1", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"/"+motor.p+")", "("+motor.fc.beta+"/"+motor.p+")",  motor.lact, "("+motor.fc.beta+"+"+motor.fc.alpha+")/"+motor.p)));
+var fieldcoils = new FieldCoil2(fc_rebco, motor.fc.kload, motor.fc.kpack, new Region(currentstudy, "fc1", new Shape(motor.R1, motor.R2, "("+motor.fc.alpha+"/"+motor.p+")", "("+motor.fc.beta+"/"+motor.p+")",  motor.lact, "("+motor.fc.beta+"+"+motor.fc.alpha+")/"+motor.p)));
 
 // Set up the components
 var backyoke = new SimpleParametricComponent(new Region(currentstudy, "by", new Shape(motor.R5, motor.R6, "("+(-180/2/motor.p)+")", "("+(180/2/motor.p)+")",  motor.lact, "("+(180/motor.p)+")")), "50JN1300");
 
-
+//debug.Print(fieldcoils.J);
+currentstudy.SetVariable("J_fc", fieldcoils.J+"*1000000");
 // Do some stuff with the armature windings
 //debug.Print(armaturewindings.uphase.mass);
 //debug.Print(armaturewindings.acloss);
 
+// Electrical power rating
+var Upowerkey = "P_load_u";
+var Vpowerkey = "P_load_v";
+var Wpowerkey = "P_load_w";
+var electricpowerkey = "("+Upowerkey+"+"+Vpowerkey+"+"+Wpowerkey+"-("+armaturewindings.acloss+"))";
+/*
+// Create a new load power response data variable if one does not already exist
+//if (currentstudy.HasParametricData(Upowerkey)==false) {
+	// Create response data from load resistor power calculation
+	var Upowerparam = app.CreateResponseDataParameter(Upowerkey);
+		Upowerparam.SetCalculationType("IntegralAverage");
+		Upowerparam.SetCaseRangeType(1); // use all steps in all cases
+		Upowerparam.SetRangeFromLastStep("N_steps/2"); // fix later
+		Upowerparam.SetLine("R_U"); // make this a parameter somewhere
+		Upowerparam.SetVariable(Upowerkey);
+	
+	currentstudy.CreateParametricDataFromTable("LineCurrent", Upowerparam);
+//}
+//*/
+
+//debug.Print(aw_uphase.Requivalent);
 
 // Set motor torque measurement name
 var motortorque = "AvgTorque";
@@ -176,21 +220,30 @@ if (currentstudy.HasParametricData(motortorque)==false) {
 /***************************/
 
 // Create objective function expressions
-var massobjectiveexp = motor.sections+"*("+armaturewindings.mass+"+"+fieldcoils.mass+"+"+backyoke.mass+")";
-var lossobjectiveexp = motor.sections+"*("+armaturewindings.acloss+")"; // need to add in iron loss
+var ironlosskey      = "P_loss_iron"
+var rotormassobjectiveexp  = motor.sections+"*(1+"+rotormassmargin+")*("+armaturewindings.mass+")";
+var statormassobjectiveexp = motor.sections+"*(1+"+statormassmargin+")*("+fieldcoils.mass+"+"+backyoke.mass+")";
+var massobjectiveexp       = rotormassobjectiveexp+"+"+statormassobjectiveexp;
+var lossobjectiveexp       = motor.sections+"*("+armaturewindings.acloss+")+("+ironlosskey+")";
+
+// Combine objective functions linearly with weights
+var optimizationobjectiveexp = massweight+"*("+massobjectiveexp+")+"+lossweight+"*("+lossobjectiveexp+")";
 
 // Set up optimization objectives
-var massobjective = createOptimizationObjective(optimization, "Mass",   massobjectiveexp, "minimize", 1);
-var lossobjective = createOptimizationObjective(optimization, "Losses", lossobjectiveexp, "minimize", 1);
+var massobjective = createOptimizationExpression(optimization, "Mass",   massobjectiveexp); // mostly for debugging
+var lossobjective = createOptimizationExpression(optimization, "Losses", lossobjectiveexp); // mostly for debugging
+var optimizationobjective = createOptimizationObjective(optimization, "Objective", optimizationobjectiveexp, "minimize", 1);
 
-/****************************/
-/* Optimization Constraints */
-/****************************/
+/*************************/
+/* Objective Constraints */
+/*************************/
 
-// Set up mechanical power constraint
-var powerconstraint = createOptimizationConstraint(optimization, "Mechanical Power", "("+2*Math.PI*motor.speed/60+"*"+motortorque+")", ">=", motor.power);
+// Set up electric power constraint
+//var powerconstraint = createOptimizationObjective(optimization, "Mechanical Power", 2*Math.PI*motor.speed/60+"*"+motortorque, ">=", 1, motor.power);
+var powerconstraint = createOptimizationObjective(optimization, "Electrical Power", electricpowerkey, ">=", 1, motor.power);
 
-
+// Set up leakage flux constraint
+var Bleakconstraint = createOptimizationObjective(optimization, "Leakage Flux", "(B_leak)", "<=", 1, motor.B_leak_limit);
 
 // Run the current study
 //if (!currentstudy.HasResult()) currentstudy.RunOptimization();
@@ -241,17 +294,18 @@ function createCalculationDefinition(study, name, selection, calctype, resulttyp
 }
 
 
-// Get or create an optimization objective (ExpressionItem class) with the given name in the given optimization table
-function createOptimizationObjective(opt, name, exp, type, weight) {
+// Get or create an optimization objective/constraint (ExpressionItem class) with the given name in the given optimization table
+function createOptimizationObjective(opt, name, exp, type, weight, value) {
 	// opt:     optimization table in which this optimization constraint is to exist
 	// name:    name of the constraint in JMAG-Designer (user-selected)
 	// exp:     objective expression (user-defined)
-	// type:    objective function type: "minimize" or "maximize"
+	// type:    objective function type: ">=", "<=", "==", "minimize" or "maximize"
 	// weight:  weight of this objective function
+	// value:   expression value to which to compare (">=", "<=", and "==" only)
 
 	var objectiveitem = null;   // initialize expression item to null
 
-	// Try to locate an existing constraint with the same name
+	// Try to locate an existing objective function/constraint with the same name
 	for (var i=0; i<opt.NumObjectives(); i++) {
 		if (opt.GetObjectiveItem(i).GetName() == name) {
 			if (objectiveitem == null) {
@@ -261,22 +315,56 @@ function createOptimizationObjective(opt, name, exp, type, weight) {
 			}
 		}
 	}
-	// Create a new expression item if one doesn't exist
+	// Create a new objective item if one doesn't exist
 	if (objectiveitem == null) {
 		opt.AddObjectiveItem(name);
 		objectiveitem = opt.GetObjectiveItem(name);
 	}
 
-	// Set the expression, type, and value of the optimization constraint
+	// Set the expression, type, and value of the optimization objective/constraint
 	objectiveitem.SetExpression(exp);
 	objectiveitem.SetType(type);
 	objectiveitem.SetWeight(weight);
+	if (value !== undefined) {
+		objectiveitem.SetValue(value);
+	}
 
 	return objectiveitem;
 }
 
-// Get or create an optimization constraint (ExpressionItem class) with the given name in the given optimization table
-function createOptimizationConstraint(opt, name, exp, type, value) {
+// Get or create an optimization expression (ExpressionItem class) with the given name in the given optimization table
+function createOptimizationExpression(opt, name, exp) {
+	// opt:     optimization table in which this expression is to exist
+	// name:    name of the expression in JMAG-Designer (user-selected)
+	// exp:     expression (user-defined)
+
+	var expressionitem = null;   // initialize expression item to null
+
+	// Try to locate an existing objective function/constraint with the same name
+	for (var i=0; i<opt.NumExpressions(); i++) {
+		if (opt.GetExpressionItem(i).GetName() == name) {
+			if (expressionitem == null) {
+				expressionitem = opt.GetExpressionItem(i);
+			} else {
+				opt.RemoveExpressionItem(i); // remove duplicate objective items
+			}
+		}
+	}
+	// Create a new objective item if one doesn't exist
+	if (expressionitem == null) {
+		opt.AddExpressionItem(name);
+		expressionitem = opt.GetExpressionItem(name);
+	}
+
+	// Set the expression, type, and value of the optimization objective/constraint
+	expressionitem.SetExpression(exp);
+	expressionitem.SetIsExpression(true);
+
+	return expressionitem;
+}
+
+// Get or create an optimization parameter constraint (ExpressionItem class) with the given name in the given optimization table
+function createParameterConstraint(opt, name, exp, type, value) {
 	// opt:     optimization table in which this optimization constraint is to exist
 	// name:    name of the constraint in JMAG-Designer (user-selected)
 	// exp:     constraint expression (user-defined)
@@ -371,8 +459,10 @@ function Shape(ri, ro, a0, a1, l, pitch){
 // MgB2 wire object constructor
 function MgB2Wire(id, temp, B, f) {
 	var  MU_0 = 0.000001257; // permeability of free space [H/m]
+	this.E_0  = 0.0000001;   // critical electric field (10^-4 V/m) [V/mm]
 	this.B    = B;           // maximum magnetic field strength in wires [T]
 	this.f    = f;           // electrical frequency [Hz]
+	this.n    = 10;          // N-Power Law exponent (not correct)
 
 	switch(id) {
 		case "36-CM":
@@ -410,10 +500,10 @@ function MgB2Wire(id, temp, B, f) {
 	this.areasc = this.scfill*this.area;        // wire superconductor area [mm^2]
 	this.ic     = this.areasc+"*("+this.jce+")"; // critical current of the wire [A]
 	
-	var w   = 2*Math.PI*this.f;                 // angular electrical frequency [rad/s]
+	var w   = "(2*pi*("+this.f+"))";                 // angular electrical frequency [rad/s]
 	var tau = Math.pow(this.ltwist/(2*Math.PI*1000),2)*MU_0*this.sigmaet/2; // effective time constant of coupling currents [s]
-	this.qc = "2*pow("+this.B+",2)*"+(Math.PI*w*w*tau/MU_0/(1+w*w*tau*tau)*Math.pow(this.rsc/this.ro,2)); // coupling loss per unit volume [W/m^3]
-	this.qh = 16/(3*Math.PI)*Math.pow(this.rfilament/this.ro,2)*this.nfilaments*this.rfilament*this.f+"*("+this.B+")*("+this.jc+")*1000";
+	this.qc = "pow("+this.B+",2)*pow("+w+",2)*"+(tau/MU_0)+"/(1+pow("+w+"*"+tau+",2))*"+Math.pow(this.rsc/this.ro,2); // coupling loss per unit volume [W/m^3]
+	this.qh = 16/(3*Math.PI)*this.scfill*this.rfilament+"*("+this.f+")*("+this.B+")*("+this.jc+")*1000";
 /*
 	this.qc2 = function(f){
 		// f: electrical frequency [Hz]
@@ -478,27 +568,27 @@ function REBCOWire(id, temp, B, f) {
 }
 
 // Armature Winding object constructor
-function ArmatureWinding(wire, kload, kpack, Imax, region, rbend) {
+function ArmatureWinding(wire, kload, kpack, I, region, rbend) {
 	this.wire   = wire;   // wire material/characteristics
 	this.kload  = kload;  // load factor (aka gamma)
 	this.kpack  = kpack;  // packing factor (aka beta)
-	this.Imax   = Imax;   // maximum current to run through the wire
+	this.I      = I;      // nominal current to run through the wire [A]
 	this.region = region; // coil region object
 	this.rbend  = (rbend !== undefined) ? rbend : this.wire.rbend; // if not specified, use the value specified in wire
 
 	// Parallel wire count and number of turns
 	this.Iparallel = "("+this.kload +"*"+this.wire.ic+")";
-	this.nparallel = "("+this.Imax+")/("+this.Iparallel+")";
+	this.nparallel = "(sqrt(2)*"+this.I+")/("+this.Iparallel+")";
 	this.nturns    = "("+this.kpack+"*"+this.region.area+")/("+this.wire.area+"*"+this.nparallel+")";
 
 	// Calculate wire length
 	var width  = "2*pi*"+this.region.shape.ravg+"*"+this.region.shape.dtheta+"/360";
 	var lpitch = "2*pi*"+this.region.shape.ravg+"*"+this.region.shape.pitch+"/360";
-	var coillength  = "2*("+this.region.shape.l+")+2*(("+lpitch+")-2*("+this.rbend+")-("+width+"))+2*pi*("+this.rbend+"+("+width+")/2)";
-	this.wirelength = "("+coillength+")*("+this.nturns+")*("+this.nparallel+")";
+	this.coillength = "2*("+this.region.shape.l+")+2*("+lpitch+")+(2*pi-4)*("+this.rbend+")";
+	this.wirelength = "("+this.coillength+")*("+this.nturns+")*("+this.nparallel+")";
 
 	// Calculate mass
-	this.mass       = "("+this.kpack+")*("+coillength+")*("+this.region.area+")*("+this.wire.density+")/2"; // divide by 2 because only 1/2 of the coil is in the modelled segment
+	this.mass       = "("+this.kpack+")*("+this.coillength+")*("+this.region.area+")*("+this.wire.density+")/2"; // divide by 2 because only 1/2 of the coil is in the modelled segment
 
 	// Calculate coupling losses
 	var lossc       = "("+this.wirelength+")/2*("+this.wire.area+")/(1e+9)*("+this.wire.qc+")"; // divide by 2 because only 1/2 of the coil is in the modelled segment
@@ -507,6 +597,9 @@ function ArmatureWinding(wire, kload, kpack, Imax, region, rbend) {
 	var lossh       = "("+this.wirelength+")/2*("+this.wire.area+")/(1e+9)*("+this.wire.qh+")"; // divide by 2 because only 1/2 of the coil is in the modelled segment
 
 	this.acloss     = "("+lossc+"+"+lossh+")";
+
+	// Calculate equivalent resistance of wire at maximum current
+	this.Requivalent = this.wire.E_0*Math.pow(this.kload,this.wire.n)/(Math.sqrt(2)*this.I)+"*("+this.coillength+")*("+this.nturns+")";
 }
 
 // Armature Windings group object constructor
@@ -556,3 +649,26 @@ function FieldCoil(wire, kload, kpack, I, region1, rbend) {
 	this.wirelength = "("+coillength+")*("+this.nturns+")*("+this.nparallel+")";
 	this.mass       = "("+this.kpack+")*("+coillength+")*("+this.region1.area+")*("+this.wire.density+")";
 }
+
+// Field Coil object 2: Let's Try This Again constructor
+function FieldCoil2(wire, kload, kpack, region1, rbend) {
+	this.wire    = wire;    // wire material/characteristics
+	this.kload   = kload;   // load factor (aka gamma)
+	this.kpack   = kpack;   // packing factor (aka beta)
+	this.region1 = region1; // original field coil region object
+	this.region2 = new Region(region1.study, "fc2", new Shape(region1.shape.ri, region1.shape.ro, "-("+region1.shape.a1+")", "-("+region1.shape.a0+")", region1.shape.l, region1.shape.pitch)); // inverted copy region
+	this.rbend   = (rbend !== undefined) ? rbend : this.wire.rbend; // if not specified, use the value specified in wire
+
+	// Calculate number of turns, wire current (assume only one wire, n_llel = 1)
+	this.I      = "("+this.kload +"*"+this.wire.ic+")";
+	this.nturns = "("+this.kpack+"*"+this.region1.area+")/("+this.wire.area+")";
+	this.J      = "(("+this.kpack+"*"+this.I+")/("+this.wire.area+"))";
+
+	// Calculate wire length and mass
+	var width  = "2*pi*"+this.region1.shape.ravg+"*"+this.region1.shape.dtheta+"/360";
+	var lpitch = "2*pi*"+this.region1.shape.ravg+"*"+this.region1.shape.pitch+"/360";
+	var coillength  = "2*("+this.region1.shape.l+")+2*(("+lpitch+")-2*("+this.rbend+")-("+width+"))+2*pi*("+this.rbend+"+("+width+")/2)";
+	this.wirelength = "("+coillength+")*("+this.nturns+")";
+	this.mass       = "("+this.kpack+")*("+coillength+")*("+this.region1.area+")*("+this.wire.density+")";
+}
+
